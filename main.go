@@ -1,60 +1,55 @@
 package main
 
 import (
-	"bytes"
-	"crypto/sha256"
-	"encoding/binary"
-	"encoding/hex"
+	"encoding/base64"
 	"fmt"
-	"os"
+	"io/ioutil"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
-func hash(block string, nonce uint32) ([]byte, error) {
-	// Convert the nonce to a byte[]
-	buf := new(bytes.Buffer)
-	err := binary.Write(buf, binary.LittleEndian, nonce)
-	if err != nil {
-		return nil, err
-	}
-
-	blockBytes := []byte(block)
-	bytes := append(blockBytes, buf.Bytes()...)
-
-	// Complete one or two hashes
-	firstHash := sha256.Sum256(bytes)
-	secondHash := sha256.Sum256(firstHash[:])
-	return secondHash[:], nil
-}
-
-func leadingZeros(arr []byte) int {
-	leadingZeros := 0
-
-	for _, b := range arr {
-		for i := 0; i < 8; i++ {
-			mask := byte(1 << uint(i))
-			if b&mask != 0 {
-				return leadingZeros
-			}
-			leadingZeros++
-		}
-	}
-	return leadingZeros
-}
-
 func main() {
-	for i := uint32(0); i < ^uint32(0); i++ {
-		hash, err := hash("COMSM0010cloud", i)
-		if err != nil {
-			fmt.Printf("Something went wrong: %s", err.Error())
-			os.Exit(1)
-			return
-		}
-
-		zeros := leadingZeros(hash)
-		if zeros > 8 {
-			fmt.Printf("The golden nonce is: %d, with hash: %s\n", i, hex.EncodeToString(hash))
-			os.Exit(0)
-			return
-		}
+	cloudConfig, err := ioutil.ReadFile("cloud-config.yaml")
+	if err != nil {
+		fmt.Println("Couldn't read cloud-config", err.Error())
+		return
 	}
+
+	session, err := session.NewSession(&aws.Config{
+		Region: aws.String("us-east-1")},
+	)
+	if err != nil {
+		fmt.Println("Couldn't create session", err.Error())
+		return
+	}
+
+	// Create EC2 service client
+	svc := ec2.New(session)
+
+	runResult, err := svc.RunInstances(&ec2.RunInstancesInput{
+		ImageId:        aws.String("ami-00eb20669e0990cb4"),
+		InstanceType:   aws.String("t2.micro"),
+		KeyName:        aws.String("COMSM0010"),
+		MinCount:       aws.Int64(1),
+		MaxCount:       aws.Int64(1),
+		SecurityGroups: aws.StringSlice([]string{"comsm0010-cloud-open"}),
+		UserData:       aws.String(base64.StdEncoding.EncodeToString(cloudConfig)),
+	})
+
+	if err != nil {
+		fmt.Println("Could not create instance", err)
+		return
+	}
+
+	fmt.Println("Created instance", *runResult.Instances[0].InstanceId)
+
+	// result, err := worker.CalculateGoldenNonce("COMSM0010cloud", uint32(0), ^uint32(0), 11)
+	// if err != nil {
+	// 	fmt.Printf("Error calculating nonce: %s\n", err.Error())
+	// 	os.Exit(1)
+	// 	return
+	// }
+	// fmt.Printf("Golden nonce is: %d, for hash: %s\n", result.Nonce, result.Hash)
 }
