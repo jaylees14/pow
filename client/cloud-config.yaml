@@ -4,7 +4,11 @@ repo_upgrade: all
 package_upgrade: true
 
 packages:
-  - golang
+  - docker 
 
 runcmd:
- - echo "foo" >> /home/ec2-user/bar.txt 
+  - sudo service docker start
+  - sudo usermod -a -G docker ec2-user
+  - docker pull jaylees/comsm0010-worker
+  - docker run jaylees/comsm0010-worker
+  - echo "Setup complete" >> /home/ec2-user/output.status

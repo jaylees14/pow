@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"strconv"
@@ -15,14 +16,18 @@ import (
 
 func createEC2Instances(session *session.Session, count int64, config []byte) (*ec2.Reservation, error) {
 	svc := ec2.New(session)
+	iamRole := ec2.IamInstanceProfileSpecification{
+		Name: aws.String("docker-sqs"),
+	}
 	return svc.RunInstances(&ec2.RunInstancesInput{
-		ImageId:        aws.String("ami-00eb20669e0990cb4"),
-		InstanceType:   aws.String("t2.micro"),
-		KeyName:        aws.String("COMSM0010"),
-		MinCount:       aws.Int64(count),
-		MaxCount:       aws.Int64(count),
-		SecurityGroups: aws.StringSlice([]string{"comsm0010-cloud-open"}),
-		UserData:       aws.String(base64.StdEncoding.EncodeToString(config)),
+		ImageId:            aws.String("ami-00eb20669e0990cb4"),
+		InstanceType:       aws.String("t2.micro"),
+		KeyName:            aws.String("COMSM0010"),
+		MinCount:           aws.Int64(count),
+		IamInstanceProfile: &iamRole,
+		MaxCount:           aws.Int64(count),
+		SecurityGroups:     aws.StringSlice([]string{"comsm0010-cloud-open"}),
+		UserData:           aws.String(base64.StdEncoding.EncodeToString(config)),
 	})
 }
 
@@ -72,30 +77,30 @@ func checkError(err error, message string) {
 }
 
 func main() {
-	// cloudConfig, err := ioutil.ReadFile("cloud-config.yaml")
-	// if err != nil {
-	// 	fmt.Println("Couldn't read cloud-config", err.Error())
-	// 	return
-	// }
+	cloudConfig, err := ioutil.ReadFile("client/cloud-config.yaml")
+	if err != nil {
+		fmt.Println("Couldn't read cloud-config", err.Error())
+		return
+	}
 	session, err := session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1")},
 	)
 	checkError(err, "Couldn't create session")
 
-	// reservation, err := createEC2Instances(session, 1, cloudConfig)
-	// checkError(err, "Couldn't spawn EC2 instances")
-	// fmt.Println("Created reservation", reservation.Instances)
+	reservation, err := createEC2Instances(session, 1, cloudConfig)
+	checkError(err, "Couldn't spawn EC2 instances")
+	fmt.Println("Created reservation", reservation.Instances)
 
-	inputQueue, err := createSQSQueue(session, "INPUT_QUEUE")
-	checkError(err, "Couldn't create input queue")
+	// inputQueue, err := createSQSQueue(session, "INPUT_QUEUE")
+	// checkError(err, "Couldn't create input queue")
 
 	// // outputQueue, err := createSQSQueue(session, "OUTPUT_QUEUE")
 	// // checkError(err, "Couldn't create input queue")
 
-	fmt.Println("Created input queue: ", &inputQueue.QueueUrl)
+	// fmt.Println("Created input queue: ", &inputQueue.QueueUrl)
 	// // fmt.Println("Created output queue: ", &outputQueue.QueueUrl)
 
-	sendMessage, err := sendMessageOnQueue(session, *inputQueue.QueueUrl, "COMSM0010cloud", 0, 1000, 8, "Compute if golden nonce exists between 0 and 100")
-	checkError(err, "Couldn't send message")
-	fmt.Println("Created message: ", *sendMessage.MessageId)
+	// sendMessage, err := sendMessageOnQueue(session, *inputQueue.QueueUrl, "COMSM0010cloud", 0, 1000, 8, "Compute if golden nonce exists between 0 and 100")
+	// checkError(err, "Couldn't send message")
+	// fmt.Println("Created message: ", *sendMessage.MessageId)
 }
