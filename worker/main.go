@@ -113,11 +113,11 @@ func main() {
 	n, err := nonce.CalculateGoldenNonce(decoded)
 	if err != nil {
 		if err, ok := err.(*nonce.NoNonceFoundError); ok {
-			fmt.Printf("Error: %s", err.Error())
+			log.Fatalf("Error: %s", err.Error())
 			return
 		}
 		checkError(err, "Couldn't calculate golden nonce")
 		return
 	}
-	fmt.Printf("Nonce is %d for hash: %s\n", n.Nonce, n.Hash)
+	log.Printf("Nonce is %d for hash %s\n", n.Nonce, n.Hash)
 }

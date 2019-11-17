@@ -34,17 +34,17 @@ func New(instances int64, cloudConfig []byte) (*CloudSession, error) {
 		return nil, err
 	}
 
-	// Create ECS Cluster
-	_, err = createECSCluster(session)
-	if err != nil {
-		return nil, err
-	}
+	// // Create ECS Cluster
+	// _, err = createECSCluster(session)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	// Create ECS task
-	_, err = createECSTask(session)
-	if err != nil {
-		return nil, err
-	}
+	// // Create ECS task
+	// _, err = createECSTask(session)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	// Create EC2 instances for the ECS cluster
 	ec2Instances, err := createEC2Instances(session, instances, cloudConfig)
@@ -52,22 +52,22 @@ func New(instances int64, cloudConfig []byte) (*CloudSession, error) {
 		return nil, err
 	}
 
-	// Create an input queue
-	inputQueue, err := createQueue(session, InputQueue)
-	if err != nil {
-		return nil, err
-	}
+	// // Create an input queue
+	// inputQueue, err := createQueue(session, InputQueue)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	// // Create an output queue
-	outputQueue, err := createQueue(session, OutputQueue)
-	if err != nil {
-		return nil, err
-	}
+	// // // Create an output queue
+	// outputQueue, err := createQueue(session, OutputQueue)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	return &CloudSession{
-		session:        session,
-		inputQueueURL:  inputQueue.QueueUrl,
-		outputQueueURL: outputQueue.QueueUrl,
+		session: session,
+		// inputQueueURL:  inputQueue.QueueUrl,
+		// outputQueueURL: outputQueue.QueueUrl,
 		ec2InstanceIds: ec2Instances.Instances,
 	}, nil
 }
