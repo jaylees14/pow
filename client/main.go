@@ -23,11 +23,11 @@ func main() {
 		return
 	}
 
-	_, err = cloudsession.New(1, cloudConfig)
+	cloudSession, err := cloudsession.New(1, cloudConfig)
 	checkError(err, "Couldn't create session")
 
-	// err = cloudSession.SendMessageOnQueue(cloudsession.InputQueue, "COMSM0010cloud", 0, 1000, 8, "Compute if golden nonce exists between 0 and 100")
-	// checkError(err, "Couldn't send message")
+	err = cloudSession.SendMessageOnQueue(cloudsession.InputQueue, "COMSM0010cloud", 0, 1000, 8, "Compute if golden nonce exists between 0 and 100")
+	checkError(err, "Couldn't send message")
 
 	// time.Sleep(90 * time.Second)
 

@@ -94,6 +94,39 @@ func decodeWorkerMessage(message *sqs.Message) (*nonce.WorkerConfig, error) {
 	}, nil
 }
 
+// SendMessageOnQueue sends a message on a queue
+func sendSuccessMessage(session *session.Session, queueName string, gn *nonce.GoldenNonce) (*sqs.SendMessageOutput, error) {
+	svc := sqs.New(session)
+
+	// Get QueueURL
+	resultURL, err := svc.GetQueueUrl(&sqs.GetQueueUrlInput{
+		QueueName: aws.String(queueName),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return svc.SendMessage(&sqs.SendMessageInput{
+		DelaySeconds: aws.Int64(0),
+		MessageAttributes: map[string]*sqs.MessageAttributeValue{
+			"Success": &sqs.MessageAttributeValue{
+				DataType:    aws.String("Number"),
+				StringValue: aws.String("1"),
+			},
+			"Nonce": &sqs.MessageAttributeValue{
+				DataType:    aws.String("Number"),
+				StringValue: aws.String(strconv.FormatUint(uint64(gn.Nonce), 10)),
+			},
+			"Hash": &sqs.MessageAttributeValue{
+				DataType:    aws.String("String"),
+				StringValue: aws.String(gn.Hash),
+			},
+		},
+		MessageBody: aws.String("did it fam"),
+		QueueUrl:    resultURL.QueueUrl,
+	})
+}
+
 func main() {
 	session, err := session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1")},
@@ -119,5 +152,6 @@ func main() {
 		checkError(err, "Couldn't calculate golden nonce")
 		return
 	}
-	log.Printf("Nonce is %d for hash %s\n", n.Nonce, n.Hash)
+	_, err = sendSuccessMessage(session, "OUTPUT_QUEUE", n)
+	checkError(err, "Couldn't send success message")
 }

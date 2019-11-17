@@ -3,7 +3,9 @@ package cloudsession
 import (
 	"encoding/base64"
 	"errors"
+	"log"
 	"strconv"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -34,17 +36,29 @@ func New(instances int64, cloudConfig []byte) (*CloudSession, error) {
 		return nil, err
 	}
 
-	// // Create ECS Cluster
-	// _, err = createECSCluster(session)
-	// if err != nil {
-	// 	return nil, err
-	// }
+	// Create ECS Cluster
+	cluster, err := createECSCluster(session)
+	if err != nil {
+		return nil, err
+	}
 
-	// // Create ECS task
-	// _, err = createECSTask(session)
-	// if err != nil {
-	// 	return nil, err
-	// }
+	// Create ECS task
+	task, err := createECSTask(session)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create an input queue
+	inputQueue, err := createQueue(session, InputQueue)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create an output queue
+	outputQueue, err := createQueue(session, OutputQueue)
+	if err != nil {
+		return nil, err
+	}
 
 	// Create EC2 instances for the ECS cluster
 	ec2Instances, err := createEC2Instances(session, instances, cloudConfig)
@@ -52,22 +66,26 @@ func New(instances int64, cloudConfig []byte) (*CloudSession, error) {
 		return nil, err
 	}
 
-	// // Create an input queue
-	// inputQueue, err := createQueue(session, InputQueue)
-	// if err != nil {
-	// 	return nil, err
-	// }
+	// Wait for EC2 instances to become ready
+	for {
+		if ec2InstancesReady(session, cluster.Cluster.ClusterName, len(ec2Instances.Instances)) {
+			log.Println("EC2 instances ready!")
+			break
+		}
+		log.Println("Waiting for EC2 instances to spin up...")
+		time.Sleep(5 * time.Second)
+	}
 
-	// // // Create an output queue
-	// outputQueue, err := createQueue(session, OutputQueue)
-	// if err != nil {
-	// 	return nil, err
-	// }
+	// Start the task
+	_, err = startECSTask(session, cluster.Cluster.ClusterName, task.TaskDefinition.TaskDefinitionArn)
+	if err != nil {
+		return nil, err
+	}
 
 	return &CloudSession{
-		session: session,
-		// inputQueueURL:  inputQueue.QueueUrl,
-		// outputQueueURL: outputQueue.QueueUrl,
+		session:        session,
+		inputQueueURL:  inputQueue.QueueUrl,
+		outputQueueURL: outputQueue.QueueUrl,
 		ec2InstanceIds: ec2Instances.Instances,
 	}, nil
 }
@@ -165,13 +183,22 @@ func createECSTask(session *session.Session) (*ecs.RegisterTaskDefinitionOutput,
 	svc := ecs.New(session)
 	containerDefinition := &ecs.ContainerDefinition{
 		Essential: aws.Bool(true),
-		Image:     aws.String("hello-world"),
+		Image:     aws.String("615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-worker:latest"),
 		Name:      aws.String("COMSM0010-worker-container"),
 	}
 	return svc.RegisterTaskDefinition(&ecs.RegisterTaskDefinitionInput{
 		ContainerDefinitions: []*ecs.ContainerDefinition{containerDefinition},
 		Family:               aws.String("COMSM0010-worker-task"),
 		Memory:               aws.String("400"),
+	})
+}
+
+func startECSTask(session *session.Session, clusterName *string, taskName *string) (*ecs.RunTaskOutput, error) {
+	svc := ecs.New(session)
+	return svc.RunTask(&ecs.RunTaskInput{
+		Cluster:        clusterName,
+		Count:          aws.Int64(1),
+		TaskDefinition: taskName,
 	})
 }
 
@@ -191,6 +218,19 @@ func createEC2Instances(session *session.Session, count int64, config []byte) (*
 		SecurityGroups:     aws.StringSlice([]string{"comsm0010-sg-open"}),
 		UserData:           aws.String(base64.StdEncoding.EncodeToString(config)),
 	})
+}
+
+func ec2InstancesReady(session *session.Session, clusterName *string, expectedCount int) bool {
+	svc := ecs.New(session)
+	desc, err := svc.DescribeClusters(&ecs.DescribeClustersInput{
+		Clusters: aws.StringSlice([]string{*clusterName}),
+	})
+	if err != nil {
+		log.Fatalln("Couldn't read instance status", err.Error())
+		return false
+	}
+
+	return *desc.Clusters[0].RegisteredContainerInstancesCount == int64(expectedCount)
 }
 
 func deleteEC2Instances(session *session.Session, instances []*ec2.Instance) (*ec2.TerminateInstancesOutput, error) {
