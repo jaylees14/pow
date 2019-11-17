@@ -1,10 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"crypto/sha256"
-	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -14,76 +10,14 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/jaylees14/pow/worker/nonce"
 )
 
-// GoldenNonce computed from nonce appended to input string
-type goldenNonce struct {
-	Nonce uint32
-	Hash  string
-}
-
-type workerConfig struct {
-	Contents   string
-	LowerBound uint32
-	UpperBound uint32
-	Target     int
-	DebugDesc  string
-}
-
-type noNonceFoundError struct {
-	err string
-}
-
-func (e *noNonceFoundError) Error() string {
-	return fmt.Sprintf("Couldn't find nonce: %s", e.err)
-}
-
-// CalculateGoldenNonce computes golden nonce for the string concatenated with all nonces in range [start, end)
-func calculateGoldenNonce(config *workerConfig) (*goldenNonce, error) {
-	for i := config.LowerBound; i < config.UpperBound; i++ {
-		hash, err := hash(config.Contents, i)
-		if err != nil {
-			return nil, err
-		}
-
-		zeros := leadingZeros(hash)
-		if zeros >= config.Target {
-			return &goldenNonce{i, hex.EncodeToString(hash)}, nil
-		}
-	}
-	return nil, &noNonceFoundError{fmt.Sprintf("No nonce found of length %d between %d and %d", config.Target, config.LowerBound, config.UpperBound)}
-}
-
-func hash(block string, nonce uint32) ([]byte, error) {
-	// Convert the nonce to a byte[]
-	buf := new(bytes.Buffer)
-	err := binary.Write(buf, binary.BigEndian, nonce)
+func checkError(err error, message string) {
 	if err != nil {
-		return nil, err
+		log.Fatal(fmt.Sprintf("[%s]: %s", message, err.Error()))
+		os.Exit(1)
 	}
-
-	blockBytes := []byte(block)
-	bytes := append(blockBytes, buf.Bytes()...)
-
-	// Complete one or two hashes
-	firstHash := sha256.Sum256(bytes)
-	secondHash := sha256.Sum256(firstHash[:])
-	return secondHash[:], nil
-}
-
-func leadingZeros(arr []byte) int {
-	leadingZeros := 0
-
-	for _, b := range arr {
-		for i := 7; i >= 0; i-- {
-			mask := byte(1 << uint(i))
-			if b&mask != 0 {
-				return leadingZeros
-			}
-			leadingZeros++
-		}
-	}
-	return leadingZeros
 }
 
 func getMessageFromQueue(session *session.Session, queueName string) (*sqs.ReceiveMessageOutput, error) {
@@ -115,14 +49,7 @@ func getMessageFromQueue(session *session.Session, queueName string) (*sqs.Recei
 	return result, nil
 }
 
-func checkError(err error, message string) {
-	if err != nil {
-		log.Fatal(fmt.Sprintf("[%s]: %s", message, err.Error()))
-		os.Exit(1)
-	}
-}
-
-func decodeWorkerMessage(message *sqs.Message) (*workerConfig, error) {
+func decodeWorkerMessage(message *sqs.Message) (*nonce.WorkerConfig, error) {
 	lowerBoundStr, ok := message.MessageAttributes["LowerBound"]
 	if !ok {
 		return nil, errors.New("Message didn't contain key LowerBound")
@@ -158,7 +85,7 @@ func decodeWorkerMessage(message *sqs.Message) (*workerConfig, error) {
 		return nil, err
 	}
 
-	return &workerConfig{
+	return &nonce.WorkerConfig{
 		Contents:   *messageStr.StringValue,
 		LowerBound: uint32(lowerBound),
 		UpperBound: uint32(upperBound),
@@ -183,14 +110,14 @@ func main() {
 	decoded, err := decodeWorkerMessage(message.Messages[0])
 	checkError(err, "Couldn't decode message")
 
-	nonce, err := calculateGoldenNonce(decoded)
+	n, err := nonce.CalculateGoldenNonce(decoded)
 	if err != nil {
-		if err, ok := err.(*noNonceFoundError); ok {
+		if err, ok := err.(*nonce.NoNonceFoundError); ok {
 			fmt.Printf("Error: %s", err.Error())
 			return
 		}
 		checkError(err, "Couldn't calculate golden nonce")
 		return
 	}
-	fmt.Printf("Nonce is %d for hash: %s\n", nonce.Nonce, nonce.Hash)
+	fmt.Printf("Nonce is %d for hash: %s\n", n.Nonce, n.Hash)
 }
