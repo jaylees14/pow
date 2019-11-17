@@ -2,4 +2,6 @@
 COMSM0010 Cloud Computing Assignment: Horizontal Scaling
 
 ## Infrastructure:
-- Use cloud-init to grab go dependency 
+- Use ecs optimized AMI image (starts daemon) - https://docs.aws.amazon.com/AmazonECS/latest/developerguide/launch_container_instance.html
+- Ensure IAM role ecsInstanceRole is created - this has AmazonEC2ContainerServiceforEC2Role attached to it
+- Ensure SG is created for ssh from any ports

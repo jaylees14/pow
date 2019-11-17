@@ -11,24 +11,15 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ecs"
 	"github.com/aws/aws-sdk-go/service/sqs"
 )
 
-func createEC2Instances(session *session.Session, count int64, config []byte) (*ec2.Reservation, error) {
-	svc := ec2.New(session)
-	iamRole := ec2.IamInstanceProfileSpecification{
-		Name: aws.String("docker-sqs"),
+func checkError(err error, message string) {
+	if err != nil {
+		log.Fatal(fmt.Sprintf("[%s]: %s", message, err.Error()))
+		os.Exit(1)
 	}
-	return svc.RunInstances(&ec2.RunInstancesInput{
-		ImageId:            aws.String("ami-00eb20669e0990cb4"),
-		InstanceType:       aws.String("t2.micro"),
-		KeyName:            aws.String("COMSM0010"),
-		MinCount:           aws.Int64(count),
-		IamInstanceProfile: &iamRole,
-		MaxCount:           aws.Int64(count),
-		SecurityGroups:     aws.StringSlice([]string{"comsm0010-cloud-open"}),
-		UserData:           aws.String(base64.StdEncoding.EncodeToString(config)),
-	})
 }
 
 func createSQSQueue(session *session.Session, queueName string) (*sqs.CreateQueueOutput, error) {
@@ -69,15 +60,46 @@ func sendMessageOnQueue(session *session.Session, qURL string, message string, l
 	})
 }
 
-func checkError(err error, message string) {
-	if err != nil {
-		log.Fatal(fmt.Sprintf("[%s]: %s", message, err.Error()))
-		os.Exit(1)
+func createEC2Instances(session *session.Session, count int64, config []byte) (*ec2.Reservation, error) {
+	svc := ec2.New(session)
+	iamRole := ec2.IamInstanceProfileSpecification{
+		Name: aws.String("ecsInstanceRole"),
 	}
+	return svc.RunInstances(&ec2.RunInstancesInput{
+		ImageId:            aws.String("ami-00129b193dc81bc31"),
+		InstanceType:       aws.String("t2.micro"),
+		KeyName:            aws.String("COMSM0010"),
+		MinCount:           aws.Int64(count),
+		IamInstanceProfile: &iamRole,
+		MaxCount:           aws.Int64(count),
+		SecurityGroups:     aws.StringSlice([]string{"comsm0010-sg-open"}),
+		UserData:           aws.String(base64.StdEncoding.EncodeToString(config)),
+	})
+}
+
+func createECSCluster(session *session.Session) (*ecs.CreateClusterOutput, error) {
+	svc := ecs.New(session)
+	return svc.CreateCluster(&ecs.CreateClusterInput{
+		ClusterName: aws.String("COMSM0010-worker-cluster"),
+	})
+}
+
+func createECSTask(session *session.Session) (*ecs.RegisterTaskDefinitionOutput, error) {
+	svc := ecs.New(session)
+	containerDefinition := &ecs.ContainerDefinition{
+		Essential: aws.Bool(true),
+		Image:     aws.String("hello-world"),
+		Name:      aws.String("COMSM0010-worker-container"),
+	}
+	return svc.RegisterTaskDefinition(&ecs.RegisterTaskDefinitionInput{
+		ContainerDefinitions: []*ecs.ContainerDefinition{containerDefinition},
+		Family:               aws.String("COMSM0010-worker-task"),
+		Memory:               aws.String("400"),
+	})
 }
 
 func main() {
-	cloudConfig, err := ioutil.ReadFile("client/cloud-config.yaml")
+	cloudConfig, err := ioutil.ReadFile("cloud-config.yaml")
 	if err != nil {
 		fmt.Println("Couldn't read cloud-config", err.Error())
 		return
@@ -87,9 +109,17 @@ func main() {
 	)
 	checkError(err, "Couldn't create session")
 
-	reservation, err := createEC2Instances(session, 1, cloudConfig)
-	checkError(err, "Couldn't spawn EC2 instances")
-	fmt.Println("Created reservation", reservation.Instances)
+	cluster, err := createECSCluster(session)
+	checkError(err, "Couldn't create ECS cluster")
+	fmt.Println("Created cluster", cluster.GoString())
+
+	task, err := createECSTask(session)
+	checkError(err, "Couldn't create ECS task")
+	fmt.Println("Created task", task.GoString())
+
+	instances, err := createEC2Instances(session, 1, cloudConfig)
+	checkError(err, "Couldn't create EC2 instances")
+	fmt.Println("Created EC2 instances", instances.GoString())
 
 	// inputQueue, err := createSQSQueue(session, "INPUT_QUEUE")
 	// checkError(err, "Couldn't create input queue")
