@@ -31,7 +31,7 @@ func getMessageFromQueue(session *session.Session, queueName string) (*sqs.Recei
 		return nil, err
 	}
 
-	result, err := svc.ReceiveMessage(&sqs.ReceiveMessageInput{
+	return svc.ReceiveMessage(&sqs.ReceiveMessageInput{
 		QueueUrl: resultURL.QueueUrl,
 		AttributeNames: aws.StringSlice([]string{
 			"SentTimestamp",
@@ -42,11 +42,6 @@ func getMessageFromQueue(session *session.Session, queueName string) (*sqs.Recei
 		}),
 		WaitTimeSeconds: aws.Int64(10),
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
 }
 
 func decodeWorkerMessage(message *sqs.Message) (*nonce.WorkerConfig, error) {
