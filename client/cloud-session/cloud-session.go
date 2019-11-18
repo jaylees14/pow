@@ -128,6 +128,29 @@ func (cs *CloudSession) SendMessageOnQueue(queueType string, message string, low
 	return err
 }
 
+// WaitForResponse waits for a response from the send requests
+func (cs *CloudSession) WaitForResponse() bool {
+	timeWaited := 0
+
+	for timeWaited < 180 {
+		result, err := getMessageFromQueue(cs.session, cs.outputQueueURL)
+		if err != nil {
+			log.Printf("Something went wrong getting output message: %s", err.Error())
+		}
+
+		if len(result.Messages) > 0 {
+			// Try and decode
+			for _, message := range result.Messages {
+				log.Printf("Got message: %s", message.MessageAttributes)
+				return true
+			}
+		}
+		time.Sleep(10 * time.Second)
+		timeWaited += 10
+	}
+	return false
+}
+
 // Cleanup tears down all infrastructure put in place to perform the computation
 func (cs *CloudSession) Cleanup() error {
 	// Remove EC2 instances
@@ -161,6 +184,22 @@ func createQueue(session *session.Session, queueName string) (*sqs.CreateQueueOu
 			"DelaySeconds":           aws.String("60"),
 			"MessageRetentionPeriod": aws.String("86400"),
 		},
+	})
+}
+
+func getMessageFromQueue(session *session.Session, queueURL *string) (*sqs.ReceiveMessageOutput, error) {
+	// Create a SQS service client.
+	svc := sqs.New(session)
+	return svc.ReceiveMessage(&sqs.ReceiveMessageInput{
+		QueueUrl: queueURL,
+		AttributeNames: aws.StringSlice([]string{
+			"SentTimestamp",
+		}),
+		MaxNumberOfMessages: aws.Int64(1),
+		MessageAttributeNames: aws.StringSlice([]string{
+			"All",
+		}),
+		WaitTimeSeconds: aws.Int64(10),
 	})
 }
 
