@@ -26,6 +26,7 @@ type CloudSession struct {
 	inputQueueURL  *string
 	outputQueueURL *string
 	ec2InstanceIds []*ec2.Instance
+	advisorService *ecs.Service
 }
 
 type WorkerResponse struct {
@@ -47,8 +48,89 @@ func New(instances int64, cloudConfig []byte) (*CloudSession, error) {
 		return nil, err
 	}
 
-	// Create ECS task
-	task, err := createECSTask(session)
+	// Create worker ECS task
+	workerContainer := &ecs.ContainerDefinition{
+		Essential: aws.Bool(true),
+		Image:     aws.String("615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-worker:latest"),
+		Name:      aws.String("COMSM0010-worker-container"),
+	}
+	workerTask, err := createECSTask(session, "worker", workerContainer, []*ecs.Volume{})
+	if err != nil {
+		return nil, err
+	}
+
+	// Create advisor ECS task
+	advisorContainer := &ecs.ContainerDefinition{
+		Essential: aws.Bool(true),
+		Image:     aws.String("google/cadvisor:latest"),
+		Name:      aws.String("COMSM0010-advisor-container"),
+		PortMappings: []*ecs.PortMapping{
+			&ecs.PortMapping{
+				ContainerPort: aws.Int64(8080),
+				HostPort:      aws.Int64(8080),
+			},
+		},
+		MountPoints: []*ecs.MountPoint{
+			&ecs.MountPoint{
+				SourceVolume:  aws.String("root"),
+				ContainerPath: aws.String("/rootfs"),
+				ReadOnly:      aws.Bool(true),
+			},
+			&ecs.MountPoint{
+				SourceVolume:  aws.String("var_run"),
+				ContainerPath: aws.String("/var/run"),
+				ReadOnly:      aws.Bool(false),
+			},
+			&ecs.MountPoint{
+				SourceVolume:  aws.String("sys"),
+				ContainerPath: aws.String("/sys"),
+				ReadOnly:      aws.Bool(true),
+			},
+			&ecs.MountPoint{
+				SourceVolume:  aws.String("var_lib_docker"),
+				ContainerPath: aws.String("/var/lib/docker"),
+				ReadOnly:      aws.Bool(true),
+			},
+			&ecs.MountPoint{
+				SourceVolume:  aws.String("cgroup"),
+				ContainerPath: aws.String("/sys/fs/cgroup"),
+				ReadOnly:      aws.Bool(true),
+			},
+		},
+	}
+	advisorVolumes := []*ecs.Volume{
+		&ecs.Volume{
+			Name: aws.String("root"),
+			Host: &ecs.HostVolumeProperties{
+				SourcePath: aws.String("/"),
+			},
+		},
+		&ecs.Volume{
+			Name: aws.String("var_run"),
+			Host: &ecs.HostVolumeProperties{
+				SourcePath: aws.String("/var/run"),
+			},
+		},
+		&ecs.Volume{
+			Name: aws.String("sys"),
+			Host: &ecs.HostVolumeProperties{
+				SourcePath: aws.String("/sys"),
+			},
+		},
+		&ecs.Volume{
+			Name: aws.String("var_lib_docker"),
+			Host: &ecs.HostVolumeProperties{
+				SourcePath: aws.String("/var/lib/docker"),
+			},
+		},
+		&ecs.Volume{
+			Name: aws.String("cgroup"),
+			Host: &ecs.HostVolumeProperties{
+				SourcePath: aws.String("/cgroup"),
+			},
+		},
+	}
+	advisorTask, err := createECSTask(session, "advisor", advisorContainer, advisorVolumes)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +164,12 @@ func New(instances int64, cloudConfig []byte) (*CloudSession, error) {
 	}
 
 	// Start the task
-	_, err = startECSTask(session, cluster.Cluster.ClusterName, task.TaskDefinition.TaskDefinitionArn)
+	_, err = startECSTask(session, cluster.Cluster.ClusterName, workerTask.TaskDefinition.TaskDefinitionArn)
+	if err != nil {
+		return nil, err
+	}
+
+	advisorService, err := startDaemonECSService(session, cluster.Cluster.ClusterName, advisorTask.TaskDefinition.TaskDefinitionArn)
 	if err != nil {
 		return nil, err
 	}
@@ -92,6 +179,7 @@ func New(instances int64, cloudConfig []byte) (*CloudSession, error) {
 		inputQueueURL:  inputQueue.QueueUrl,
 		outputQueueURL: outputQueue.QueueUrl,
 		ec2InstanceIds: ec2Instances.Instances,
+		advisorService: advisorService.Service,
 	}, nil
 }
 
@@ -182,6 +270,11 @@ func (cs *CloudSession) Cleanup() error {
 		return err
 	}
 
+	_, err = stopECSService(cs.session, cs.advisorService.ClusterArn, cs.advisorService.ServiceName)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -245,17 +338,13 @@ func createECSCluster(session *session.Session) (*ecs.CreateClusterOutput, error
 	})
 }
 
-func createECSTask(session *session.Session) (*ecs.RegisterTaskDefinitionOutput, error) {
+func createECSTask(session *session.Session, name string, containerDefinition *ecs.ContainerDefinition, volumes []*ecs.Volume) (*ecs.RegisterTaskDefinitionOutput, error) {
 	svc := ecs.New(session)
-	containerDefinition := &ecs.ContainerDefinition{
-		Essential: aws.Bool(true),
-		Image:     aws.String("615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-worker:latest"),
-		Name:      aws.String("COMSM0010-worker-container"),
-	}
 	return svc.RegisterTaskDefinition(&ecs.RegisterTaskDefinitionInput{
 		ContainerDefinitions: []*ecs.ContainerDefinition{containerDefinition},
-		Family:               aws.String("COMSM0010-worker-task"),
+		Family:               aws.String(fmt.Sprintf("COMSM0010-%s-task", name)),
 		Memory:               aws.String("400"),
+		Volumes:              volumes,
 	})
 }
 
@@ -265,6 +354,24 @@ func startECSTask(session *session.Session, clusterName *string, taskName *strin
 		Cluster:        clusterName,
 		Count:          aws.Int64(1),
 		TaskDefinition: taskName,
+	})
+}
+
+func startDaemonECSService(session *session.Session, clusterName *string, taskName *string) (*ecs.CreateServiceOutput, error) {
+	svc := ecs.New(session)
+	return svc.CreateService(&ecs.CreateServiceInput{
+		Cluster:            clusterName,
+		SchedulingStrategy: aws.String("DAEMON"),
+		ServiceName:        aws.String("COMSM0010-advisor-service"),
+		TaskDefinition:     taskName,
+	})
+}
+
+func stopECSService(session *session.Session, clusterName *string, serviceName *string) (*ecs.DeleteServiceOutput, error) {
+	svc := ecs.New(session)
+	return svc.DeleteService(&ecs.DeleteServiceInput{
+		Cluster: clusterName,
+		Service: serviceName,
 	})
 }
 

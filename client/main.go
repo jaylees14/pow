@@ -33,7 +33,7 @@ func configureSIGTERMHandler(session *cloudsession.CloudSession) {
 func main() {
 	// CLI Args
 	block := flag.String("block", "COMSM0010cloud", "block of data the nonce is appended to")
-	leadingZeros := flag.Int("n", 8, "number of leading zeros")
+	leadingZeros := flag.Int("n", 40, "number of leading zeros")
 	cloudConfigPath := flag.String("cloud-config", "cloud-config.yaml", "path to cloud config file")
 	flag.Parse()
 
@@ -52,7 +52,7 @@ func main() {
 	configureSIGTERMHandler(cloudSession)
 
 	// Send a test message on the queue
-	err = cloudSession.SendMessageOnQueue(cloudsession.InputQueue, *block, 0, 1000, *leadingZeros, "Compute if golden nonce exists between 0 and 100")
+	err = cloudSession.SendMessageOnQueue(cloudsession.InputQueue, *block, 0, ^uint32(0), *leadingZeros, "Compute if golden nonce exists between 0 and 100")
 	checkError(err, "Couldn't send message")
 	log.Printf("Computing golden nonce...")
 
