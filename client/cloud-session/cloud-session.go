@@ -27,6 +27,7 @@ type CloudSession struct {
 	ec2WorkerInstanceIds  []*ec2.Instance
 	ec2MonitorInstanceIds []*ec2.Instance
 	advisorService        *ecs.Service
+	grafanaService        *ecs.Service
 }
 
 type WorkerResponse struct {
@@ -173,6 +174,22 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 		return nil, err
 	}
 
+	grafanaContainer := &ecs.ContainerDefinition{
+		Essential: aws.Bool(true),
+		Image:     aws.String("grafana/grafana:latest"),
+		Name:      aws.String("COMSM0010-grafana-container"),
+		PortMappings: []*ecs.PortMapping{
+			&ecs.PortMapping{
+				ContainerPort: aws.Int64(3000),
+				HostPort:      aws.Int64(3000),
+			},
+		},
+	}
+	grafanaTask, err := createECSTask(session, "grafana", grafanaContainer, []*ecs.Volume{})
+	if err != nil {
+		return nil, err
+	}
+
 	// Create an input queue
 	inputQueue, err := createQueue(session, InputQueue)
 	if err != nil {
@@ -224,6 +241,11 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 		return nil, err
 	}
 
+	grafanaService, err := startDaemonECSService(session, monitorCluster.Cluster.ClusterName, grafanaTask.TaskDefinition.TaskDefinitionArn)
+	if err != nil {
+		return nil, err
+	}
+
 	return &CloudSession{
 		session:               session,
 		inputQueueURL:         inputQueue.QueueUrl,
@@ -231,6 +253,7 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 		ec2WorkerInstanceIds:  ec2WorkerInstances.Instances,
 		ec2MonitorInstanceIds: ec2MonitorInstances.Instances,
 		advisorService:        advisorService.Service,
+		grafanaService:        grafanaService.Service,
 	}, nil
 }
 
@@ -328,6 +351,11 @@ func (cs *CloudSession) Cleanup() error {
 	}
 
 	_, err = stopECSService(cs.session, cs.advisorService.ClusterArn, cs.advisorService.ServiceName)
+	if err != nil {
+		return err
+	}
+
+	_, err = stopECSService(cs.session, cs.grafanaService.ClusterArn, cs.grafanaService.ServiceName)
 	if err != nil {
 		return err
 	}

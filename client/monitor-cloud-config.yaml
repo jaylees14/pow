@@ -18,7 +18,7 @@ write_files:
 
       # A scrape configuration containing exactly one endpoint to scrape.
       scrape_configs:
-        - job_name: 'cadvisor'
+        - job_name: ecs 
           ec2_sd_configs:
             - region: us-east-1
               port: 8080
