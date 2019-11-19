@@ -1,7 +1,6 @@
 package cloudsession
 
 import (
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -22,11 +21,12 @@ const (
 
 // CloudSession maintains information needed to make requests to the cloud
 type CloudSession struct {
-	session        *session.Session
-	inputQueueURL  *string
-	outputQueueURL *string
-	ec2InstanceIds []*ec2.Instance
-	advisorService *ecs.Service
+	session               *session.Session
+	inputQueueURL         *string
+	outputQueueURL        *string
+	ec2WorkerInstanceIds  []*ec2.Instance
+	ec2MonitorInstanceIds []*ec2.Instance
+	advisorService        *ecs.Service
 }
 
 type WorkerResponse struct {
@@ -34,7 +34,7 @@ type WorkerResponse struct {
 }
 
 // New constructs a CloudSession
-func New(instances int64, cloudConfig []byte) (*CloudSession, error) {
+func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (*CloudSession, error) {
 	session, err := session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1")},
 	)
@@ -42,8 +42,14 @@ func New(instances int64, cloudConfig []byte) (*CloudSession, error) {
 		return nil, err
 	}
 
-	// Create ECS Cluster
-	cluster, err := createECSCluster(session)
+	// Create ECS Cluster for workers
+	workerCluster, err := createECSCluster(session, "COMSM0010-worker-cluster")
+	if err != nil {
+		return nil, err
+	}
+
+	// Create ECS Cluster for monitoring
+	monitorCluster, err := createECSCluster(session, "COMSM0010-monitor-cluster")
 	if err != nil {
 		return nil, err
 	}
@@ -135,6 +141,38 @@ func New(instances int64, cloudConfig []byte) (*CloudSession, error) {
 		return nil, err
 	}
 
+	// Create prometheus ECS task
+	promContainer := &ecs.ContainerDefinition{
+		Essential: aws.Bool(true),
+		Image:     aws.String("prom/prometheus:latest"),
+		Name:      aws.String("COMSM0010-prom-container"),
+		PortMappings: []*ecs.PortMapping{
+			&ecs.PortMapping{
+				ContainerPort: aws.Int64(9090),
+				HostPort:      aws.Int64(9090),
+			},
+		},
+		MountPoints: []*ecs.MountPoint{
+			&ecs.MountPoint{
+				SourceVolume:  aws.String("etc_prom"),
+				ContainerPath: aws.String("/etc/prometheus"),
+				ReadOnly:      aws.Bool(true),
+			},
+		},
+	}
+	promVolumes := []*ecs.Volume{
+		&ecs.Volume{
+			Name: aws.String("etc_prom"),
+			Host: &ecs.HostVolumeProperties{
+				SourcePath: aws.String("/etc/prometheus"),
+			},
+		},
+	}
+	prometheusTask, err := createECSTask(session, "prometheus", promContainer, promVolumes)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create an input queue
 	inputQueue, err := createQueue(session, InputQueue)
 	if err != nil {
@@ -147,15 +185,20 @@ func New(instances int64, cloudConfig []byte) (*CloudSession, error) {
 		return nil, err
 	}
 
-	// Create EC2 instances for the ECS cluster
-	ec2Instances, err := createEC2Instances(session, instances, cloudConfig)
+	// Create EC2 instances for the worker cluster
+	ec2WorkerInstances, err := createEC2Instances(session, instances, workerCloudConfig)
+	if err != nil {
+		return nil, err
+	}
+	// Create EC2 instances for the monitoring cluster
+	ec2MonitorInstances, err := createEC2Instances(session, 1, monitorCloudConfig)
 	if err != nil {
 		return nil, err
 	}
 
 	// Wait for EC2 instances to become ready
 	for {
-		if ec2InstancesReady(session, cluster.Cluster.ClusterName, len(ec2Instances.Instances)) {
+		if ec2InstancesReady(session, workerCluster.Cluster.ClusterName, len(ec2WorkerInstances.Instances)) && ec2InstancesReady(session, monitorCluster.Cluster.ClusterName, 1) {
 			log.Println("EC2 instances ready!")
 			break
 		}
@@ -163,23 +206,31 @@ func New(instances int64, cloudConfig []byte) (*CloudSession, error) {
 		time.Sleep(5 * time.Second)
 	}
 
-	// Start the task
-	_, err = startECSTask(session, cluster.Cluster.ClusterName, workerTask.TaskDefinition.TaskDefinitionArn)
+	// Start the prom task
+	_, err = startECSTask(session, monitorCluster.Cluster.ClusterName, prometheusTask.TaskDefinition.TaskDefinitionArn)
 	if err != nil {
 		return nil, err
 	}
 
-	advisorService, err := startDaemonECSService(session, cluster.Cluster.ClusterName, advisorTask.TaskDefinition.TaskDefinitionArn)
+	// Start the worker task
+	_, err = startECSTask(session, workerCluster.Cluster.ClusterName, workerTask.TaskDefinition.TaskDefinitionArn)
+	if err != nil {
+		return nil, err
+	}
+
+	// Start advisor service
+	advisorService, err := startDaemonECSService(session, workerCluster.Cluster.ClusterName, advisorTask.TaskDefinition.TaskDefinitionArn)
 	if err != nil {
 		return nil, err
 	}
 
 	return &CloudSession{
-		session:        session,
-		inputQueueURL:  inputQueue.QueueUrl,
-		outputQueueURL: outputQueue.QueueUrl,
-		ec2InstanceIds: ec2Instances.Instances,
-		advisorService: advisorService.Service,
+		session:               session,
+		inputQueueURL:         inputQueue.QueueUrl,
+		outputQueueURL:        outputQueue.QueueUrl,
+		ec2WorkerInstanceIds:  ec2WorkerInstances.Instances,
+		ec2MonitorInstanceIds: ec2MonitorInstances.Instances,
+		advisorService:        advisorService.Service,
 	}, nil
 }
 
@@ -194,6 +245,7 @@ func (cs *CloudSession) SendMessageOnQueue(queueType string, message string, low
 		return errors.New("Invalid queue type, must be InputQueue or OutputQueue")
 	}
 
+	// TODO: Move this to a util
 	svc := sqs.New(cs.session)
 	_, err := svc.SendMessage(&sqs.SendMessageInput{
 		DelaySeconds: aws.Int64(0),
@@ -253,7 +305,12 @@ func (cs *CloudSession) WaitForResponse() (*WorkerResponse, error) {
 // Cleanup tears down all infrastructure put in place to perform the computation
 func (cs *CloudSession) Cleanup() error {
 	// Remove EC2 instances
-	_, err := deleteEC2Instances(cs.session, cs.ec2InstanceIds)
+	_, err := deleteEC2Instances(cs.session, cs.ec2WorkerInstanceIds)
+	if err != nil {
+		return err
+	}
+
+	_, err = deleteEC2Instances(cs.session, cs.ec2MonitorInstanceIds)
 	if err != nil {
 		return err
 	}
@@ -276,145 +333,4 @@ func (cs *CloudSession) Cleanup() error {
 	}
 
 	return nil
-}
-
-// -- Helper Methods
-// -- SQS
-func createQueue(session *session.Session, queueName string) (*sqs.CreateQueueOutput, error) {
-	svc := sqs.New(session)
-	return svc.CreateQueue(&sqs.CreateQueueInput{
-		QueueName: aws.String(queueName),
-		Attributes: map[string]*string{
-			"DelaySeconds":           aws.String("60"),
-			"MessageRetentionPeriod": aws.String("86400"),
-		},
-	})
-}
-
-func getMessageFromQueue(session *session.Session, queueURL *string) (*sqs.ReceiveMessageOutput, error) {
-	// Create a SQS service client.
-	svc := sqs.New(session)
-	return svc.ReceiveMessage(&sqs.ReceiveMessageInput{
-		QueueUrl: queueURL,
-		AttributeNames: aws.StringSlice([]string{
-			"SentTimestamp",
-		}),
-		MaxNumberOfMessages: aws.Int64(1),
-		MessageAttributeNames: aws.StringSlice([]string{
-			"All",
-		}),
-		WaitTimeSeconds: aws.Int64(10),
-	})
-}
-
-func decodeWorkerMessage(message *sqs.Message) (*WorkerResponse, error) {
-	successStr, ok := message.MessageAttributes["Success"]
-	if !ok {
-		return nil, errors.New("Message didn't contain key Success")
-	}
-
-	success, err := strconv.ParseBool(*successStr.StringValue)
-	if err != nil {
-		return nil, err
-	}
-
-	return &WorkerResponse{
-		Success: success,
-	}, nil
-}
-
-func clearQueue(session *session.Session, queueURL *string) (*sqs.PurgeQueueOutput, error) {
-	svc := sqs.New(session)
-	return svc.PurgeQueue(&sqs.PurgeQueueInput{
-		QueueUrl: queueURL,
-	})
-}
-
-// -- ECS
-func createECSCluster(session *session.Session) (*ecs.CreateClusterOutput, error) {
-	svc := ecs.New(session)
-	return svc.CreateCluster(&ecs.CreateClusterInput{
-		ClusterName: aws.String("COMSM0010-worker-cluster"),
-	})
-}
-
-func createECSTask(session *session.Session, name string, containerDefinition *ecs.ContainerDefinition, volumes []*ecs.Volume) (*ecs.RegisterTaskDefinitionOutput, error) {
-	svc := ecs.New(session)
-	return svc.RegisterTaskDefinition(&ecs.RegisterTaskDefinitionInput{
-		ContainerDefinitions: []*ecs.ContainerDefinition{containerDefinition},
-		Family:               aws.String(fmt.Sprintf("COMSM0010-%s-task", name)),
-		Memory:               aws.String("400"),
-		Volumes:              volumes,
-	})
-}
-
-func startECSTask(session *session.Session, clusterName *string, taskName *string) (*ecs.RunTaskOutput, error) {
-	svc := ecs.New(session)
-	return svc.RunTask(&ecs.RunTaskInput{
-		Cluster:        clusterName,
-		Count:          aws.Int64(1),
-		TaskDefinition: taskName,
-	})
-}
-
-func startDaemonECSService(session *session.Session, clusterName *string, taskName *string) (*ecs.CreateServiceOutput, error) {
-	svc := ecs.New(session)
-	return svc.CreateService(&ecs.CreateServiceInput{
-		Cluster:            clusterName,
-		SchedulingStrategy: aws.String("DAEMON"),
-		ServiceName:        aws.String("COMSM0010-advisor-service"),
-		TaskDefinition:     taskName,
-	})
-}
-
-func stopECSService(session *session.Session, clusterName *string, serviceName *string) (*ecs.DeleteServiceOutput, error) {
-	svc := ecs.New(session)
-	return svc.DeleteService(&ecs.DeleteServiceInput{
-		Cluster: clusterName,
-		Service: serviceName,
-	})
-}
-
-// -- EC2
-func createEC2Instances(session *session.Session, count int64, config []byte) (*ec2.Reservation, error) {
-	svc := ec2.New(session)
-	iamRole := ec2.IamInstanceProfileSpecification{
-		Name: aws.String("ecsInstanceRole"),
-	}
-	return svc.RunInstances(&ec2.RunInstancesInput{
-		ImageId:            aws.String("ami-00129b193dc81bc31"),
-		InstanceType:       aws.String("t2.micro"),
-		KeyName:            aws.String("COMSM0010"),
-		MinCount:           aws.Int64(count),
-		IamInstanceProfile: &iamRole,
-		MaxCount:           aws.Int64(count),
-		SecurityGroups:     aws.StringSlice([]string{"comsm0010-sg-open"}),
-		UserData:           aws.String(base64.StdEncoding.EncodeToString(config)),
-	})
-}
-
-func ec2InstancesReady(session *session.Session, clusterName *string, expectedCount int) bool {
-	svc := ecs.New(session)
-	desc, err := svc.DescribeClusters(&ecs.DescribeClustersInput{
-		Clusters: aws.StringSlice([]string{*clusterName}),
-	})
-	if err != nil {
-		log.Fatalln("Couldn't read instance status", err.Error())
-		return false
-	}
-
-	return *desc.Clusters[0].RegisteredContainerInstancesCount == int64(expectedCount)
-}
-
-func deleteEC2Instances(session *session.Session, instances []*ec2.Instance) (*ec2.TerminateInstancesOutput, error) {
-	svc := ec2.New(session)
-
-	ids := make([]*string, len(instances))
-	for i, instance := range instances {
-		ids[i] = instance.InstanceId
-	}
-
-	return svc.TerminateInstances(&ec2.TerminateInstancesInput{
-		InstanceIds: ids,
-	})
 }

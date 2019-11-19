@@ -34,17 +34,23 @@ func main() {
 	// CLI Args
 	block := flag.String("block", "COMSM0010cloud", "block of data the nonce is appended to")
 	leadingZeros := flag.Int("n", 40, "number of leading zeros")
-	cloudConfigPath := flag.String("cloud-config", "cloud-config.yaml", "path to cloud config file")
+	workerCloudConfigPath := flag.String("worker-cloud-config", "worker-cloud-config.yaml", "path to worker cloud config file")
+	monitorCloudConfigPath := flag.String("monitor-cloud-config", "monitor-cloud-config.yaml", "path to monitor cloud config file")
 	flag.Parse()
 
-	cloudConfig, err := ioutil.ReadFile(*cloudConfigPath)
+	workerCloudConfig, err := ioutil.ReadFile(*workerCloudConfigPath)
 	if err != nil {
-		fmt.Println("Couldn't read cloud-config", err.Error())
+		fmt.Println("Couldn't read worker-cloud-config", err.Error())
+		return
+	}
+	monitorCloudConfig, err := ioutil.ReadFile(*monitorCloudConfigPath)
+	if err != nil {
+		fmt.Println("Couldn't read monitor-cloud-config", err.Error())
 		return
 	}
 
 	// Set up the cloud infra, VMs etc.
-	cloudSession, err := cloudsession.New(1, cloudConfig)
+	cloudSession, err := cloudsession.New(1, workerCloudConfig, monitorCloudConfig)
 	checkError(err, "Couldn't create session")
 	log.Printf("Created cloud session...")
 
