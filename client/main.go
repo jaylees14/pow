@@ -56,9 +56,9 @@ func main() {
 	checkError(err, "Couldn't send message")
 	log.Printf("Computing golden nonce...")
 
-	success := cloudSession.WaitForResponse()
+	success, err := cloudSession.WaitForResponse()
 	checkError(err, "Didn't receive response")
-	log.Printf("Was success? %t", success)
+	log.Printf("Was success? %t", success.Success)
 
 	err = cloudSession.Cleanup()
 	checkError(err, "Couldn't clean up")

@@ -3,6 +3,7 @@ package cloudsession
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"log"
 	"strconv"
 	"time"
@@ -25,6 +26,10 @@ type CloudSession struct {
 	inputQueueURL  *string
 	outputQueueURL *string
 	ec2InstanceIds []*ec2.Instance
+}
+
+type WorkerResponse struct {
+	Success bool
 }
 
 // New constructs a CloudSession
@@ -129,26 +134,32 @@ func (cs *CloudSession) SendMessageOnQueue(queueType string, message string, low
 }
 
 // WaitForResponse waits for a response from the send requests
-func (cs *CloudSession) WaitForResponse() bool {
+func (cs *CloudSession) WaitForResponse() (*WorkerResponse, error) {
 	timeWaited := 0
 
 	for timeWaited < 180 {
 		result, err := getMessageFromQueue(cs.session, cs.outputQueueURL)
 		if err != nil {
-			log.Printf("Something went wrong getting output message: %s", err.Error())
+			return nil, err
 		}
 
 		if len(result.Messages) > 0 {
 			// Try and decode
 			for _, message := range result.Messages {
-				log.Printf("Got message: %s", message.MessageAttributes)
-				return true
+				decoded, err := decodeWorkerMessage(message)
+				if err != nil {
+					return nil, err
+				}
+				if decoded.Success {
+					return decoded, nil
+				}
 			}
 		}
 		time.Sleep(10 * time.Second)
 		timeWaited += 10
 	}
-	return false
+
+	return nil, fmt.Errorf("No result found after %d seconds", timeWaited)
 }
 
 // Cleanup tears down all infrastructure put in place to perform the computation
@@ -201,6 +212,22 @@ func getMessageFromQueue(session *session.Session, queueURL *string) (*sqs.Recei
 		}),
 		WaitTimeSeconds: aws.Int64(10),
 	})
+}
+
+func decodeWorkerMessage(message *sqs.Message) (*WorkerResponse, error) {
+	successStr, ok := message.MessageAttributes["Success"]
+	if !ok {
+		return nil, errors.New("Message didn't contain key Success")
+	}
+
+	success, err := strconv.ParseBool(*successStr.StringValue)
+	if err != nil {
+		return nil, err
+	}
+
+	return &WorkerResponse{
+		Success: success,
+	}, nil
 }
 
 func clearQueue(session *session.Session, queueURL *string) (*sqs.PurgeQueueOutput, error) {
