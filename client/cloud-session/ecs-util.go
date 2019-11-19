@@ -51,3 +51,27 @@ func stopECSService(session *session.Session, clusterName *string, serviceName *
 		Service: serviceName,
 	})
 }
+
+func createMountPoint(sourceVolume string, containerPath string, readOnly bool) *ecs.MountPoint {
+	return &ecs.MountPoint{
+		SourceVolume:  aws.String(sourceVolume),
+		ContainerPath: aws.String(containerPath),
+		ReadOnly:      aws.Bool(readOnly),
+	}
+}
+
+func createPortMapping(container int64, host int64) *ecs.PortMapping {
+	return &ecs.PortMapping{
+		ContainerPort: aws.Int64(container),
+		HostPort:      aws.Int64(host),
+	}
+}
+
+func createVolume(name string, hostPath string) *ecs.Volume {
+	return &ecs.Volume{
+		Name: aws.String(name),
+		Host: &ecs.HostVolumeProperties{
+			SourcePath: aws.String(hostPath),
+		},
+	}
+}

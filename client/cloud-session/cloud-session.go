@@ -30,6 +30,7 @@ type CloudSession struct {
 	grafanaService        *ecs.Service
 }
 
+// WorkerResponse represents a worker's response to a task, which may or not be successful
 type WorkerResponse struct {
 	Success bool
 }
@@ -68,74 +69,24 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 
 	// Create advisor ECS task
 	advisorContainer := &ecs.ContainerDefinition{
-		Essential: aws.Bool(true),
-		Image:     aws.String("google/cadvisor:latest"),
-		Name:      aws.String("COMSM0010-advisor-container"),
-		PortMappings: []*ecs.PortMapping{
-			&ecs.PortMapping{
-				ContainerPort: aws.Int64(8080),
-				HostPort:      aws.Int64(8080),
-			},
-		},
+		Essential:    aws.Bool(true),
+		Image:        aws.String("google/cadvisor:latest"),
+		Name:         aws.String("COMSM0010-advisor-container"),
+		PortMappings: []*ecs.PortMapping{createPortMapping(8080, 8080)},
 		MountPoints: []*ecs.MountPoint{
-			&ecs.MountPoint{
-				SourceVolume:  aws.String("root"),
-				ContainerPath: aws.String("/rootfs"),
-				ReadOnly:      aws.Bool(true),
-			},
-			&ecs.MountPoint{
-				SourceVolume:  aws.String("var_run"),
-				ContainerPath: aws.String("/var/run"),
-				ReadOnly:      aws.Bool(false),
-			},
-			&ecs.MountPoint{
-				SourceVolume:  aws.String("sys"),
-				ContainerPath: aws.String("/sys"),
-				ReadOnly:      aws.Bool(true),
-			},
-			&ecs.MountPoint{
-				SourceVolume:  aws.String("var_lib_docker"),
-				ContainerPath: aws.String("/var/lib/docker"),
-				ReadOnly:      aws.Bool(true),
-			},
-			&ecs.MountPoint{
-				SourceVolume:  aws.String("cgroup"),
-				ContainerPath: aws.String("/sys/fs/cgroup"),
-				ReadOnly:      aws.Bool(true),
-			},
+			createMountPoint("root", "/rootfs", true),
+			createMountPoint("var_run", "/var/run", false),
+			createMountPoint("sys", "/sys", true),
+			createMountPoint("var_lib_docker", "/var/lib/docker", true),
+			createMountPoint("cgroup", "/sys/fs/cgroup", true),
 		},
 	}
 	advisorVolumes := []*ecs.Volume{
-		&ecs.Volume{
-			Name: aws.String("root"),
-			Host: &ecs.HostVolumeProperties{
-				SourcePath: aws.String("/"),
-			},
-		},
-		&ecs.Volume{
-			Name: aws.String("var_run"),
-			Host: &ecs.HostVolumeProperties{
-				SourcePath: aws.String("/var/run"),
-			},
-		},
-		&ecs.Volume{
-			Name: aws.String("sys"),
-			Host: &ecs.HostVolumeProperties{
-				SourcePath: aws.String("/sys"),
-			},
-		},
-		&ecs.Volume{
-			Name: aws.String("var_lib_docker"),
-			Host: &ecs.HostVolumeProperties{
-				SourcePath: aws.String("/var/lib/docker"),
-			},
-		},
-		&ecs.Volume{
-			Name: aws.String("cgroup"),
-			Host: &ecs.HostVolumeProperties{
-				SourcePath: aws.String("/cgroup"),
-			},
-		},
+		createVolume("root", "/"),
+		createVolume("var_run", "/var/run"),
+		createVolume("sys", "/sys"),
+		createVolume("var_lib_docker", "/var/lib/docker"),
+		createVolume("cgroup", "/cgroup"),
 	}
 	advisorTask, err := createECSTask(session, "advisor", advisorContainer, advisorVolumes)
 	if err != nil {
@@ -144,46 +95,26 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 
 	// Create prometheus ECS task
 	promContainer := &ecs.ContainerDefinition{
-		Essential: aws.Bool(true),
-		Image:     aws.String("prom/prometheus:latest"),
-		Name:      aws.String("COMSM0010-prom-container"),
-		PortMappings: []*ecs.PortMapping{
-			&ecs.PortMapping{
-				ContainerPort: aws.Int64(9090),
-				HostPort:      aws.Int64(9090),
-			},
-		},
-		MountPoints: []*ecs.MountPoint{
-			&ecs.MountPoint{
-				SourceVolume:  aws.String("etc_prom"),
-				ContainerPath: aws.String("/etc/prometheus"),
-				ReadOnly:      aws.Bool(true),
-			},
-		},
+		Essential:    aws.Bool(true),
+		Image:        aws.String("prom/prometheus:latest"),
+		Name:         aws.String("COMSM0010-prom-container"),
+		PortMappings: []*ecs.PortMapping{createPortMapping(9090, 9090)},
+		MountPoints:  []*ecs.MountPoint{createMountPoint("etc_prom", "/etc/prometheus", true)},
 	}
 	promVolumes := []*ecs.Volume{
-		&ecs.Volume{
-			Name: aws.String("etc_prom"),
-			Host: &ecs.HostVolumeProperties{
-				SourcePath: aws.String("/etc/prometheus"),
-			},
-		},
+		createVolume("etc_prom", "/etc/prometheus"),
 	}
 	prometheusTask, err := createECSTask(session, "prometheus", promContainer, promVolumes)
 	if err != nil {
 		return nil, err
 	}
 
+	// Create grafana ECS task
 	grafanaContainer := &ecs.ContainerDefinition{
-		Essential: aws.Bool(true),
-		Image:     aws.String("grafana/grafana:latest"),
-		Name:      aws.String("COMSM0010-grafana-container"),
-		PortMappings: []*ecs.PortMapping{
-			&ecs.PortMapping{
-				ContainerPort: aws.Int64(3000),
-				HostPort:      aws.Int64(3000),
-			},
-		},
+		Essential:    aws.Bool(true),
+		Image:        aws.String("grafana/grafana:latest"),
+		Name:         aws.String("COMSM0010-grafana-container"),
+		PortMappings: []*ecs.PortMapping{createPortMapping(3000, 3000)},
 	}
 	grafanaTask, err := createECSTask(session, "grafana", grafanaContainer, []*ecs.Volume{})
 	if err != nil {
