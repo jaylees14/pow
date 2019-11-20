@@ -12,9 +12,12 @@ import (
 	cloudsession "github.com/jaylees14/pow/client/cloud-session"
 )
 
-func checkError(err error, message string) {
+func checkError(err error, message string, session *cloudsession.CloudSession) {
 	if err != nil {
 		log.Fatal(fmt.Sprintf("[%s]: %s", message, err.Error()))
+		if session != nil {
+			session.Cleanup()
+		}
 		os.Exit(1)
 	}
 }
@@ -51,7 +54,7 @@ func main() {
 
 	// Set up the cloud infra, VMs etc.
 	cloudSession, err := cloudsession.New(1, workerCloudConfig, monitorCloudConfig)
-	checkError(err, "Couldn't create session")
+	checkError(err, "Couldn't create session", nil)
 	log.Printf("Created cloud session...")
 
 	// Configure Ctrl-C handler to perform graceful shutdown
@@ -59,13 +62,12 @@ func main() {
 
 	// Send a test message on the queue
 	err = cloudSession.SendMessageOnQueue(cloudsession.InputQueue, *block, 0, ^uint32(0), *leadingZeros, "Compute if golden nonce exists between 0 and 100")
-	checkError(err, "Couldn't send message")
+	checkError(err, "Couldn't send message", cloudSession)
 	log.Printf("Computing golden nonce...")
 
 	success, err := cloudSession.WaitForResponse()
-	checkError(err, "Didn't receive response")
+	checkError(err, "Didn't receive response", cloudSession)
 	log.Printf("Was success? %t", success.Success)
 
-	err = cloudSession.Cleanup()
-	checkError(err, "Couldn't clean up")
+	cloudSession.Cleanup()
 }

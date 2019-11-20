@@ -58,9 +58,10 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 
 	// Create worker ECS task
 	workerContainer := &ecs.ContainerDefinition{
-		Essential: aws.Bool(true),
-		Image:     aws.String("615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-worker:latest"),
-		Name:      aws.String("COMSM0010-worker-container"),
+		Essential:    aws.Bool(true),
+		Image:        aws.String("615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-worker:latest"),
+		Name:         aws.String("COMSM0010-worker-container"),
+		PortMappings: []*ecs.PortMapping{createPortMapping(2112, 2112)},
 	}
 	workerTask, err := createECSTask(session, "worker", workerContainer, []*ecs.Volume{})
 	if err != nil {
@@ -145,13 +146,18 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 	}
 
 	// Wait for EC2 instances to become ready
+	clusterSizes := map[string]int{
+		*workerCluster.Cluster.ClusterName:  len(ec2WorkerInstances.Instances),
+		*monitorCluster.Cluster.ClusterName: 1,
+	}
+
 	for {
-		if ec2InstancesReady(session, workerCluster.Cluster.ClusterName, len(ec2WorkerInstances.Instances)) && ec2InstancesReady(session, monitorCluster.Cluster.ClusterName, 1) {
+		if ec2InstancesReady(session, clusterSizes) {
 			log.Println("EC2 instances ready!")
 			break
 		}
 		log.Println("Waiting for EC2 instances to spin up...")
-		time.Sleep(5 * time.Second)
+		time.Sleep(10 * time.Second)
 	}
 
 	// Start the prom task
@@ -230,8 +236,9 @@ func (cs *CloudSession) SendMessageOnQueue(queueType string, message string, low
 // WaitForResponse waits for a response from the send requests
 func (cs *CloudSession) WaitForResponse() (*WorkerResponse, error) {
 	timeWaited := 0
+	responsesReceived := 0
 
-	for timeWaited < 180 {
+	for timeWaited < 360 {
 		result, err := getMessageFromQueue(cs.session, cs.outputQueueURL)
 		if err != nil {
 			return nil, err
@@ -244,12 +251,19 @@ func (cs *CloudSession) WaitForResponse() (*WorkerResponse, error) {
 				if err != nil {
 					return nil, err
 				}
+				responsesReceived++
+
 				if decoded.Success {
 					return decoded, nil
 				}
 			}
 		}
-		time.Sleep(10 * time.Second)
+
+		// If received a failure from every worker
+		if responsesReceived == len(cs.ec2WorkerInstanceIds) {
+			return nil, fmt.Errorf("No golden nonce found")
+		}
+
 		timeWaited += 10
 	}
 
@@ -257,39 +271,37 @@ func (cs *CloudSession) WaitForResponse() (*WorkerResponse, error) {
 }
 
 // Cleanup tears down all infrastructure put in place to perform the computation
-func (cs *CloudSession) Cleanup() error {
+func (cs *CloudSession) Cleanup() {
 	// Remove EC2 instances
 	_, err := deleteEC2Instances(cs.session, cs.ec2WorkerInstanceIds)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 
 	_, err = deleteEC2Instances(cs.session, cs.ec2MonitorInstanceIds)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 
 	// Clear input queue
 	_, err = clearQueue(cs.session, cs.inputQueueURL)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 
 	// Clear output queue
 	_, err = clearQueue(cs.session, cs.outputQueueURL)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 
 	_, err = stopECSService(cs.session, cs.advisorService.ClusterArn, cs.advisorService.ServiceName)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 
 	_, err = stopECSService(cs.session, cs.grafanaService.ClusterArn, cs.grafanaService.ServiceName)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
-
-	return nil
 }

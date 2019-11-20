@@ -27,17 +27,30 @@ func createEC2Instances(session *session.Session, count int64, config []byte) (*
 	})
 }
 
-func ec2InstancesReady(session *session.Session, clusterName *string, expectedCount int) bool {
+func ec2InstancesReady(session *session.Session, clusterSizes map[string]int) bool {
 	svc := ecs.New(session)
+
+	// Get all cluster names from map
+	clusterNames := make([]string, 0, len(clusterSizes))
+	for k := range clusterSizes {
+		clusterNames = append(clusterNames, k)
+	}
+
 	desc, err := svc.DescribeClusters(&ecs.DescribeClustersInput{
-		Clusters: aws.StringSlice([]string{*clusterName}),
+		Clusters: aws.StringSlice(clusterNames),
 	})
 	if err != nil {
 		log.Fatalln("Couldn't read instance status", err.Error())
 		return false
 	}
 
-	return *desc.Clusters[0].RegisteredContainerInstancesCount == int64(expectedCount)
+	for _, cluster := range desc.Clusters {
+		if *cluster.RegisteredContainerInstancesCount != int64(clusterSizes[*cluster.ClusterName]) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func deleteEC2Instances(session *session.Session, instances []*ec2.Instance) (*ec2.TerminateInstancesOutput, error) {

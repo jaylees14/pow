@@ -2,6 +2,7 @@ package cloudsession
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -47,6 +48,8 @@ func decodeWorkerMessage(message *sqs.Message) (*WorkerResponse, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Println(*message.Body)
 
 	return &WorkerResponse{
 		Success: success,
