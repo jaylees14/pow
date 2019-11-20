@@ -22,4 +22,6 @@ write_files:
           ec2_sd_configs:
             - region: us-east-1
               port: 8080
+            - region: us-east-1
+              port: 2112 
     path: /etc/prometheus/prometheus.yml
