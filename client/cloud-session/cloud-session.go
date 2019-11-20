@@ -234,11 +234,11 @@ func (cs *CloudSession) SendMessageOnQueue(queueType string, message string, low
 }
 
 // WaitForResponse waits for a response from the send requests
-func (cs *CloudSession) WaitForResponse() (*WorkerResponse, error) {
+func (cs *CloudSession) WaitForResponse(timeout int) (*WorkerResponse, error) {
 	timeWaited := 0
 	responsesReceived := 0
 
-	for timeWaited < 360 {
+	for timeWaited < timeout {
 		result, err := getMessageFromQueue(cs.session, cs.outputQueueURL)
 		if err != nil {
 			return nil, err

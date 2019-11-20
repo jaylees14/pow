@@ -38,6 +38,7 @@ func main() {
 	block := flag.String("block", "COMSM0010cloud", "block of data the nonce is appended to")
 	leadingZeros := flag.Int("d", 40, "number of leading zeros")
 	workers := flag.Int("n", 1, "number of workers")
+	timeout := flag.Int("timeout", 360, "timeout in seconds")
 	workerCloudConfigPath := flag.String("worker-cloud-config", "worker-cloud-config.yaml", "path to worker cloud config file")
 	monitorCloudConfigPath := flag.String("monitor-cloud-config", "monitor-cloud-config.yaml", "path to monitor cloud config file")
 	flag.Parse()
@@ -75,7 +76,7 @@ func main() {
 	}
 	log.Printf("Computing golden nonce...")
 
-	success, err := cloudSession.WaitForResponse()
+	success, err := cloudSession.WaitForResponse(*timeout)
 	checkError(err, "Didn't receive response", cloudSession)
 	log.Printf("Was success? %t", success.Success)
 
