@@ -25,11 +25,11 @@ func createECSTask(session *session.Session, name string, containerDefinition *e
 	})
 }
 
-func startECSTask(session *session.Session, clusterName *string, taskName *string) (*ecs.RunTaskOutput, error) {
+func startECSTask(session *session.Session, clusterName *string, taskName *string, count int64) (*ecs.RunTaskOutput, error) {
 	svc := ecs.New(session)
 	return svc.RunTask(&ecs.RunTaskInput{
 		Cluster:        clusterName,
-		Count:          aws.Int64(1),
+		Count:          aws.Int64(count),
 		TaskDefinition: taskName,
 	})
 }

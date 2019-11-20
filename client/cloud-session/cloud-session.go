@@ -148,7 +148,7 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 	// Wait for EC2 instances to become ready
 	clusterSizes := map[string]int{
 		*workerCluster.Cluster.ClusterName:  len(ec2WorkerInstances.Instances),
-		*monitorCluster.Cluster.ClusterName: 1,
+		*monitorCluster.Cluster.ClusterName: len(ec2MonitorInstances.Instances),
 	}
 
 	for {
@@ -161,13 +161,13 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 	}
 
 	// Start the prom task
-	_, err = startECSTask(session, monitorCluster.Cluster.ClusterName, prometheusTask.TaskDefinition.TaskDefinitionArn)
+	_, err = startECSTask(session, monitorCluster.Cluster.ClusterName, prometheusTask.TaskDefinition.TaskDefinitionArn, 1)
 	if err != nil {
 		return nil, err
 	}
 
 	// Start the worker task
-	_, err = startECSTask(session, workerCluster.Cluster.ClusterName, workerTask.TaskDefinition.TaskDefinitionArn)
+	_, err = startECSTask(session, workerCluster.Cluster.ClusterName, workerTask.TaskDefinition.TaskDefinitionArn, instances)
 	if err != nil {
 		return nil, err
 	}
