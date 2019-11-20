@@ -63,7 +63,7 @@ func main() {
 	configureSIGTERMHandler(cloudSession)
 
 	// Partition the work between each of the workers
-	maxValue := ^uint32(0)
+	maxValue := uint32(10000)
 	split := maxValue / uint32(*workers)
 	for i := uint32(0); i < uint32(*workers); i++ {
 		startValue := i * split
