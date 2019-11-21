@@ -27,6 +27,19 @@ func createEC2Instances(session *session.Session, count int64, config []byte) (*
 	})
 }
 
+func getEC2InstanceIP(session *session.Session, instanceID string) (*string, error) {
+	svc := ec2.New(session)
+	desc, err := svc.DescribeInstances(&ec2.DescribeInstancesInput{
+		InstanceIds: aws.StringSlice([]string{instanceID}),
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return desc.Reservations[0].Instances[0].PublicIpAddress, nil
+}
+
 func ec2InstancesReady(session *session.Session, clusterSizes map[string]int) bool {
 	svc := ecs.New(session)
 

@@ -15,12 +15,18 @@ func createECSCluster(session *session.Session, name string) (*ecs.CreateCluster
 	})
 }
 
-func createECSTask(session *session.Session, name string, containerDefinition *ecs.ContainerDefinition, volumes []*ecs.Volume) (*ecs.RegisterTaskDefinitionOutput, error) {
+func createECSTask(session *session.Session, name string, containerDefinition *ecs.ContainerDefinition, volumes []*ecs.Volume, hostNetworkMode bool) (*ecs.RegisterTaskDefinitionOutput, error) {
+	networkMode := "bridge"
+	if hostNetworkMode {
+		networkMode = "host"
+	}
+
 	svc := ecs.New(session)
 	return svc.RegisterTaskDefinition(&ecs.RegisterTaskDefinitionInput{
 		ContainerDefinitions: []*ecs.ContainerDefinition{containerDefinition},
 		Family:               aws.String(fmt.Sprintf("COMSM0010-%s-task", name)),
 		Memory:               aws.String("400"),
+		NetworkMode:          aws.String(networkMode),
 		Volumes:              volumes,
 	})
 }
@@ -34,12 +40,12 @@ func startECSTask(session *session.Session, clusterName *string, taskName *strin
 	})
 }
 
-func startDaemonECSService(session *session.Session, clusterName *string, taskName *string) (*ecs.CreateServiceOutput, error) {
+func startDaemonECSService(session *session.Session, clusterName *string, taskName *string, name string) (*ecs.CreateServiceOutput, error) {
 	svc := ecs.New(session)
 	return svc.CreateService(&ecs.CreateServiceInput{
 		Cluster:            clusterName,
 		SchedulingStrategy: aws.String("DAEMON"),
-		ServiceName:        aws.String("COMSM0010-advisor-service"),
+		ServiceName:        aws.String(fmt.Sprintf("COMSM0010-%s-service", name)),
 		TaskDefinition:     taskName,
 	})
 }

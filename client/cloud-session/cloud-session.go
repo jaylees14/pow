@@ -63,7 +63,7 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 		Name:         aws.String("COMSM0010-worker-container"),
 		PortMappings: []*ecs.PortMapping{createPortMapping(2112, 2112)},
 	}
-	workerTask, err := createECSTask(session, "worker", workerContainer, []*ecs.Volume{})
+	workerTask, err := createECSTask(session, "worker", workerContainer, []*ecs.Volume{}, false)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 		createVolume("var_lib_docker", "/var/lib/docker"),
 		createVolume("cgroup", "/cgroup"),
 	}
-	advisorTask, err := createECSTask(session, "advisor", advisorContainer, advisorVolumes)
+	advisorTask, err := createECSTask(session, "advisor", advisorContainer, advisorVolumes, false)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +105,7 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 	promVolumes := []*ecs.Volume{
 		createVolume("etc_prom", "/etc/prometheus"),
 	}
-	prometheusTask, err := createECSTask(session, "prometheus", promContainer, promVolumes)
+	prometheusTask, err := createECSTask(session, "prometheus", promContainer, promVolumes, false)
 	if err != nil {
 		return nil, err
 	}
@@ -113,11 +113,11 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 	// Create grafana ECS task
 	grafanaContainer := &ecs.ContainerDefinition{
 		Essential:    aws.Bool(true),
-		Image:        aws.String("grafana/grafana:latest"),
+		Image:        aws.String("615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-grafana:latest"),
 		Name:         aws.String("COMSM0010-grafana-container"),
 		PortMappings: []*ecs.PortMapping{createPortMapping(3000, 3000)},
 	}
-	grafanaTask, err := createECSTask(session, "grafana", grafanaContainer, []*ecs.Volume{})
+	grafanaTask, err := createECSTask(session, "grafana", grafanaContainer, []*ecs.Volume{}, true)
 	if err != nil {
 		return nil, err
 	}
@@ -173,15 +173,21 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 	}
 
 	// Start advisor service
-	advisorService, err := startDaemonECSService(session, workerCluster.Cluster.ClusterName, advisorTask.TaskDefinition.TaskDefinitionArn)
+	advisorService, err := startDaemonECSService(session, workerCluster.Cluster.ClusterName, advisorTask.TaskDefinition.TaskDefinitionArn, "advisor")
 	if err != nil {
 		return nil, err
 	}
 
-	grafanaService, err := startDaemonECSService(session, monitorCluster.Cluster.ClusterName, grafanaTask.TaskDefinition.TaskDefinitionArn)
+	grafanaService, err := startDaemonECSService(session, monitorCluster.Cluster.ClusterName, grafanaTask.TaskDefinition.TaskDefinitionArn, "grafana")
 	if err != nil {
 		return nil, err
 	}
+
+	ip, err := getEC2InstanceIP(session, *ec2MonitorInstances.Instances[0].InstanceId)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("Graphana metrics: http://%s:3000/d/gZ3GtvbWz/comsm0010-monitoring?orgId=1&refresh=10s&from=now-5m&to=now", *ip)
 
 	return &CloudSession{
 		session:               session,
