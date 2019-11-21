@@ -78,7 +78,12 @@ func main() {
 
 	success, err := cloudSession.WaitForResponse(*timeout)
 	checkError(err, "Didn't receive response", cloudSession)
-	log.Printf("Was success? %t", success.Success)
+
+	if success.Success {
+		log.Printf("Success! Found golden nonce %s with hash %s", *success.Nonce, *success.Hash)
+	} else {
+		log.Printf("Failure... no nonce found")
+	}
 
 	cloudSession.Cleanup()
 }

@@ -33,6 +33,8 @@ type CloudSession struct {
 // WorkerResponse represents a worker's response to a task, which may or not be successful
 type WorkerResponse struct {
 	Success bool
+	Nonce   *string
+	Hash    *string
 }
 
 // New constructs a CloudSession

@@ -2,7 +2,6 @@ package cloudsession
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -49,10 +48,26 @@ func decodeWorkerMessage(message *sqs.Message) (*WorkerResponse, error) {
 		return nil, err
 	}
 
-	fmt.Println(*message.Body)
+	if !success {
+		return &WorkerResponse{
+			Success: success,
+		}, nil
+	}
+
+	nonceStr, ok := message.MessageAttributes["Nonce"]
+	if !ok {
+		return nil, errors.New("Message didn't contain key Nonce")
+	}
+
+	hashStr, ok := message.MessageAttributes["Hash"]
+	if !ok {
+		return nil, errors.New("Message didn't contain key Hash")
+	}
 
 	return &WorkerResponse{
 		Success: success,
+		Hash:    hashStr.StringValue,
+		Nonce:   nonceStr.StringValue,
 	}, nil
 }
 
