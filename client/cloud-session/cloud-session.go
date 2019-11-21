@@ -128,8 +128,20 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 		return nil, err
 	}
 
+	// Clear input queue
+	_, err = clearQueue(session, inputQueue.QueueUrl)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create an output queue
 	outputQueue, err := createQueue(session, OutputQueue)
+	if err != nil {
+		return nil, err
+	}
+
+	// Clear output queue
+	_, err = clearQueue(session, outputQueue.QueueUrl)
 	if err != nil {
 		return nil, err
 	}
