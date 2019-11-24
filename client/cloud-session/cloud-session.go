@@ -165,12 +165,12 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 		*monitorCluster.Cluster.ClusterName: len(ec2MonitorInstances.Instances),
 	}
 
+	log.Println("Waiting for EC2 instances to spin up...")
 	for {
 		if ec2InstancesReady(session, clusterSizes) {
 			log.Println("EC2 instances ready!")
 			break
 		}
-		log.Println("Waiting for EC2 instances to spin up...")
 		time.Sleep(10 * time.Second)
 	}
 
@@ -201,7 +201,7 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("Graphana metrics: http://%s:3000/d/gZ3GtvbWz/comsm0010-monitoring?orgId=1&refresh=10s&from=now-5m&to=now", *ip)
+	log.Printf("Grafana metrics: http://%s:3000/d/gZ3GtvbWz/comsm0010-monitoring?orgId=1&refresh=10s&from=now-5m&to=now", *ip)
 
 	return &CloudSession{
 		session:               session,
@@ -215,7 +215,7 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 }
 
 // SendMessageOnQueue sends a message on a queue
-func (cs *CloudSession) SendMessageOnQueue(queueType string, message string, lower uint32, upper uint32, target int, desc string) error {
+func (cs *CloudSession) SendMessageOnQueue(queueType string, message *string, lower uint32, upper uint32, target int) error {
 	qURL := ""
 	if queueType == OutputQueue {
 		qURL = *cs.outputQueueURL
@@ -232,7 +232,7 @@ func (cs *CloudSession) SendMessageOnQueue(queueType string, message string, low
 		MessageAttributes: map[string]*sqs.MessageAttributeValue{
 			"Message": &sqs.MessageAttributeValue{
 				DataType:    aws.String("String"),
-				StringValue: aws.String(message),
+				StringValue: message,
 			},
 			"LowerBound": &sqs.MessageAttributeValue{
 				DataType:    aws.String("Number"),
@@ -247,7 +247,7 @@ func (cs *CloudSession) SendMessageOnQueue(queueType string, message string, low
 				StringValue: aws.String(strconv.FormatInt(int64(target), 10)),
 			},
 		},
-		MessageBody: aws.String(desc),
+		MessageBody: aws.String("FIXME"),
 		QueueUrl:    &qURL,
 	})
 	return err

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -10,6 +9,12 @@ import (
 	"syscall"
 
 	cloudsession "github.com/jaylees14/pow/client/cloud-session"
+	"github.com/jaylees14/pow/client/cmd"
+)
+
+const (
+	workerCloudConfigPath  string = "worker-cloud-config.yaml"
+	monitorCloudConfigPath string = "monitor-cloud-config.yaml"
 )
 
 func checkError(err error, message string, session *cloudsession.CloudSession) {
@@ -27,62 +32,63 @@ func configureSIGTERMHandler(session *cloudsession.CloudSession) {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-		fmt.Println("Gracefully shutting down...")
+		log.Println("Gracefully shutting down...")
 		session.Cleanup()
 		os.Exit(0)
 	}()
 }
 
-func main() {
-	// CLI Args
-	block := flag.String("block", "COMSM0010cloud", "block of data the nonce is appended to")
-	leadingZeros := flag.Int("d", 40, "number of leading zeros")
-	workers := flag.Int("n", 1, "number of workers")
-	timeout := flag.Int("timeout", 360, "timeout in seconds")
-	workerCloudConfigPath := flag.String("worker-cloud-config", "worker-cloud-config.yaml", "path to worker cloud config file")
-	monitorCloudConfigPath := flag.String("monitor-cloud-config", "monitor-cloud-config.yaml", "path to monitor cloud config file")
-	flag.Parse()
+// Partition the work between each of the workers
+func partitionWork(config *cmd.WorkerConfig, cloudSession *cloudsession.CloudSession) error {
+	maxValue := ^uint32(0)
+	split := maxValue / uint32(config.Workers)
+	for i := uint32(0); i < uint32(config.Workers); i++ {
+		startValue := i * split
+		endValue := (i + 1) * split
+		if i == uint32(config.Workers)-1 {
+			endValue = maxValue
+		}
+		err := cloudSession.SendMessageOnQueue(cloudsession.InputQueue, config.Block, startValue, endValue, config.LeadingZeros)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-	workerCloudConfig, err := ioutil.ReadFile(*workerCloudConfigPath)
-	if err != nil {
-		fmt.Println("Couldn't read worker-cloud-config", err.Error())
-		return
-	}
-	monitorCloudConfig, err := ioutil.ReadFile(*monitorCloudConfigPath)
-	if err != nil {
-		fmt.Println("Couldn't read monitor-cloud-config", err.Error())
-		return
-	}
+func main() {
+	config, err := cmd.ParseArgs()
+	checkError(err, "Couldn't parse arguments: ", nil)
+
+	config.LogConfig()
+
+	// Read worker configurations
+	workerCloudConfig, err := ioutil.ReadFile(workerCloudConfigPath)
+	checkError(err, "Couldn't read worker-cloud-config", nil)
+
+	monitorCloudConfig, err := ioutil.ReadFile(monitorCloudConfigPath)
+	checkError(err, "Couldn't read monitor-cloud-config", nil)
 
 	// Set up the cloud infra, VMs etc.
-	cloudSession, err := cloudsession.New(int64(*workers), workerCloudConfig, monitorCloudConfig)
+	cloudSession, err := cloudsession.New(int64(config.Workers), workerCloudConfig, monitorCloudConfig)
 	checkError(err, "Couldn't create session", nil)
-	log.Printf("Created cloud session...")
+	log.Printf("Created cloud session")
 
 	// Configure Ctrl-C handler to perform graceful shutdown
 	configureSIGTERMHandler(cloudSession)
 
-	// Partition the work between each of the workers
-	maxValue := ^uint32(0)
-	split := maxValue / uint32(*workers)
-	for i := uint32(0); i < uint32(*workers); i++ {
-		startValue := i * split
-		endValue := (i + 1) * split
-		if i == uint32(*workers)-1 {
-			endValue = maxValue
-		}
-		err = cloudSession.SendMessageOnQueue(cloudsession.InputQueue, *block, startValue, endValue, *leadingZeros, "Compute if golden nonce exists between 0 and 100")
-		checkError(err, "Couldn't send message", cloudSession)
-	}
-	log.Printf("Computing golden nonce...")
+	err = partitionWork(config, cloudSession)
+	checkError(err, "Couldn't send message", cloudSession)
 
-	success, err := cloudSession.WaitForResponse(*timeout)
+	log.Printf("Computing golden nonce")
+
+	success, err := cloudSession.WaitForResponse(config.Timeout)
 	checkError(err, "Didn't receive response", cloudSession)
 
 	if success.Success {
 		log.Printf("Success! Found golden nonce %s with hash %s", *success.Nonce, *success.Hash)
 	} else {
-		log.Printf("Failure... no nonce found")
+		log.Printf("Failure: no nonce found")
 	}
 
 	cloudSession.Cleanup()
