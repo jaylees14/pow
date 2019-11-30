@@ -15,8 +15,9 @@ func createEC2Instances(session *session.Session, count int64, config []byte) (*
 	iamRole := ec2.IamInstanceProfileSpecification{
 		Name: aws.String("ecsInstanceRole"),
 	}
+
 	return svc.RunInstances(&ec2.RunInstancesInput{
-		ImageId:            aws.String("ami-097e3d1cdb541f43e"),
+		ImageId:            aws.String("ami-03d69fdc8eaf5227e"),
 		InstanceType:       aws.String("t2.micro"),
 		KeyName:            aws.String("COMSM0010"),
 		MinCount:           aws.Int64(count),

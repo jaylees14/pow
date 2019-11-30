@@ -196,7 +196,7 @@ func main() {
 			checkError(sendErr, "Couldn't send failure message")
 
 			// Delete message to stop another worker from taking it
-			_, err := deleteWorkerMessage(session, "OUTPUT_QUEUE", message.Messages[0])
+			_, err := deleteWorkerMessage(session, "INPUT_QUEUE", message.Messages[0])
 			checkError(err, "Couldn't delete message from queue")
 			return
 		}
@@ -207,6 +207,6 @@ func main() {
 	// Delete message to stop another worker from taking it
 	_, err = sendSuccessMessage(session, "OUTPUT_QUEUE", n)
 	checkError(err, "Couldn't send success message")
-	_, err = deleteWorkerMessage(session, "OUTPUT_QUEUE", message.Messages[0])
+	_, err = deleteWorkerMessage(session, "INPUT_QUEUE", message.Messages[0])
 	checkError(err, "Couldn't delete worker message")
 }
