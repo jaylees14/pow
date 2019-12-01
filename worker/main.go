@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"strconv"
 
@@ -12,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/jaylees14/pow/worker/nonce"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func checkError(err error, message string) {
@@ -169,10 +167,10 @@ func deleteWorkerMessage(session *session.Session, queueName string, message *sq
 
 func main() {
 	// Prometheus metrics
-	go func() {
-		http.Handle("/metrics", promhttp.Handler())
-		http.ListenAndServe(":2112", nil)
-	}()
+	// go func() {
+	// 	http.Handle("/metrics", promhttp.Handler())
+	// 	http.ListenAndServe(":2112", nil)
+	// }()
 
 	session, err := session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1")},

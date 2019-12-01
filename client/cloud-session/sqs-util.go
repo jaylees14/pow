@@ -15,7 +15,6 @@ func createQueue(session *session.Session, queueName string) (*sqs.CreateQueueOu
 	return svc.CreateQueue(&sqs.CreateQueueInput{
 		QueueName: aws.String(queueName),
 		Attributes: map[string]*string{
-			"DelaySeconds":           aws.String("60"),
 			"MessageRetentionPeriod": aws.String("86400"),
 		},
 	})

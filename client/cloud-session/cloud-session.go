@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"strconv"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -43,30 +42,6 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 		return nil, err
 	}
 
-	// Create an input queue
-	inputQueue, err := createQueue(session, InputQueue)
-	if err != nil {
-		return nil, err
-	}
-
-	// Clear input queue
-	_, err = clearQueue(session, inputQueue.QueueUrl)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create an output queue
-	outputQueue, err := createQueue(session, OutputQueue)
-	if err != nil {
-		return nil, err
-	}
-
-	// Clear output queue
-	_, err = clearQueue(session, outputQueue.QueueUrl)
-	if err != nil {
-		return nil, err
-	}
-
 	// Create EC2 instances for the worker cluster
 	ec2WorkerInstances, err := createEC2Instances(session, instances, workerCloudConfig)
 	if err != nil {
@@ -78,13 +53,34 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 		return nil, err
 	}
 
-	go func() {
-		time.Sleep(30 * time.Second)
-		ip, err := getEC2InstanceIP(session, *ec2MonitorInstances.Instances[0].InstanceId)
-		if err == nil {
-			log.Printf("Grafana metrics: http://%s:3000/d/gZ3GtvbWz/comsm0010-monitoring?orgId=1&refresh=10s&from=now-5m&to=now", *ip)
-		}
-	}()
+	// Create an input queue
+	inputQueue, err := createQueue(session, InputQueue)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = clearQueue(session, inputQueue.QueueUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create an output queue
+	outputQueue, err := createQueue(session, OutputQueue)
+	if err != nil {
+		return nil, err
+	}
+	_, err = clearQueue(session, outputQueue.QueueUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	// go func() {
+	// 	time.Sleep(30 * time.Second)
+	// 	ip, err := getEC2InstanceIP(session, *ec2MonitorInstances.Instances[0].InstanceId)
+	// 	if err == nil {
+	// 		log.Printf("Grafana metrics: http://%s:3000/d/gZ3GtvbWz/comsm0010-monitoring?orgId=1&refresh=10s&from=now-5m&to=now", *ip)
+	// 	}
+	// }()
 
 	return &CloudSession{
 		session:               session,
