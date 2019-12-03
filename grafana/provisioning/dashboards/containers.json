@@ -16,6 +16,7 @@
   "editable": true,
   "gnetId": 193,
   "graphTooltip": 1,
+  "id": 1,
   "links": [],
   "panels": [
     {
@@ -27,7 +28,7 @@
         "rgba(237, 129, 40, 0.89)",
         "rgba(50, 172, 45, 0.97)"
       ],
-      "datasource": "Prometheus",
+      "datasource": "Prometheus-Docker",
       "editable": true,
       "error": false,
       "format": "none",
@@ -115,7 +116,7 @@
         "rgba(237, 129, 40, 0.89)",
         "rgba(50, 172, 45, 0.97)"
       ],
-      "datasource": "Prometheus",
+      "datasource": "Prometheus-Docker",
       "editable": true,
       "error": false,
       "format": "mbytes",
@@ -203,7 +204,7 @@
         "rgba(237, 129, 40, 0.89)",
         "rgba(50, 172, 45, 0.97)"
       ],
-      "datasource": "Prometheus",
+      "datasource": "Prometheus-Docker",
       "editable": true,
       "error": false,
       "format": "percent",
@@ -468,7 +469,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "Prometheus",
+      "datasource": "Prometheus-Docker",
       "decimals": 2,
       "editable": true,
       "error": false,
@@ -566,7 +567,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "Prometheus",
+      "datasource": "Prometheus-Docker",
       "decimals": 2,
       "editable": true,
       "error": false,
@@ -665,7 +666,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "Prometheus",
+      "datasource": "Prometheus-Docker",
       "editable": true,
       "error": false,
       "fill": 1,
@@ -760,7 +761,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "Prometheus",
+      "datasource": "Prometheus-Docker",
       "editable": true,
       "error": false,
       "fill": 1,
@@ -889,7 +890,7 @@
     ]
   },
   "timezone": "browser",
-  "title": "COMSM0010 Monitoring",
+  "title": "COMSM0010 Monitoring Docker",
   "uid": "gZ3GtvbWz",
   "version": 1
 }
