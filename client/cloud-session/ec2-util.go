@@ -17,7 +17,7 @@ func createEC2Instances(session *session.Session, count int64, config []byte) (*
 	}
 
 	return svc.RunInstances(&ec2.RunInstancesInput{
-		ImageId:            aws.String("ami-0012425476d2088e3"),
+		ImageId:            aws.String("ami-081ff81791becd5df"),
 		InstanceType:       aws.String("t2.micro"),
 		KeyName:            aws.String("COMSM0010"),
 		MinCount:           aws.Int64(count),

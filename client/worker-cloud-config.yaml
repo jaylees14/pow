@@ -36,6 +36,5 @@ runcmd:
   - sudo service docker start
   - sudo docker pull 615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-worker:latest
   - sudo docker pull google/cadvisor:latest
-  - cd /home/ec2-user
-  - sudo docker run -d -p 2112:2112 615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-worker:latest
+  - sudo docker run -d 615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-worker:latest
   - sudo docker run -d -p 8080:8080 -v /:/rootfs -v /var/run:/var/run -v /sys:/sys -v /var/lib/docker:/var/lib/docker -v /sys/fs/cgroup:/cgroup google/cadvisor:latest  

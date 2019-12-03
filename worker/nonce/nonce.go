@@ -6,6 +6,9 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // GoldenNonce computed from nonce appended to input string
@@ -28,12 +31,12 @@ type NoNonceFoundError struct {
 	err string
 }
 
-// var (
-// 	opsProcessed = promauto.NewCounter(prometheus.CounterOpts{
-// 		Name: "worker_processed_ops_total",
-// 		Help: "The total number of processed nonces",
-// 	})
-// )
+var (
+	opsProcessed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "worker_processed_ops_total",
+		Help: "The total number of processed nonces",
+	})
+)
 
 func (e *NoNonceFoundError) Error() string {
 	return fmt.Sprintf("Couldn't find nonce: %s", e.err)
@@ -80,9 +83,9 @@ func CalculateGoldenNonce(config *WorkerConfig) (*GoldenNonce, error) {
 		}
 
 		zeros := leadingZeros(hash)
-		// go func() {
-		// 	opsProcessed.Inc()
-		// }()
+		go func() {
+			opsProcessed.Inc()
+		}()
 		if zeros >= config.Target {
 			return &GoldenNonce{i, hex.EncodeToString(hash)}, nil
 		}

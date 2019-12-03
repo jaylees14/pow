@@ -9,7 +9,7 @@ RUN go get github.com/prometheus/client_golang/prometheus
 RUN go get github.com/prometheus/client_golang/prometheus/promauto
 RUN go get github.com/prometheus/client_golang/prometheus/promhttp
 
-RUN go build -o client
+RUN go build -o worker 
 
 EXPOSE 2112
-ENTRYPOINT ./client
+ENTRYPOINT ./worker
