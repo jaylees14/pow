@@ -10,14 +10,14 @@ import (
 	"github.com/aws/aws-sdk-go/service/ecs"
 )
 
-func createEC2Instances(session *session.Session, count int64, config []byte) (*ec2.Reservation, error) {
+func createEC2Instances(session *session.Session, imageId string, count int64, config []byte) (*ec2.Reservation, error) {
 	svc := ec2.New(session)
 	iamRole := ec2.IamInstanceProfileSpecification{
 		Name: aws.String("ecsInstanceRole"),
 	}
 
 	return svc.RunInstances(&ec2.RunInstancesInput{
-		ImageId:            aws.String("ami-081ff81791becd5df"),
+		ImageId:            aws.String(imageId),
 		InstanceType:       aws.String("t2.micro"),
 		KeyName:            aws.String("COMSM0010"),
 		MinCount:           aws.Int64(count),

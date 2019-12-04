@@ -13,8 +13,10 @@ import (
 )
 
 const (
-	workerCloudConfigPath  string = "worker-cloud-config.yaml"
-	monitorCloudConfigPath string = "monitor-cloud-config.yaml"
+	workerDockerCloudConfigPath  string = "worker-cloud-config-docker.yaml"
+	workerECRCloudConfigPath     string = "worker-cloud-config-ecr.yaml"
+	monitorDockerCloudConfigPath string = "monitor-cloud-config-docker.yaml"
+	monitorECRCloudConfigPath    string = "monitor-cloud-config-ecr.yaml"
 )
 
 func checkError(err error, message string, session *cloudsession.CloudSession) {
@@ -62,16 +64,28 @@ func main() {
 
 	config.LogConfig()
 
-	// Read worker configurations
-	workerCloudConfig, err := ioutil.ReadFile(workerCloudConfigPath)
-	checkError(err, "Couldn't read worker-cloud-config", nil)
-
-	monitorCloudConfig, err := ioutil.ReadFile(monitorCloudConfigPath)
-	checkError(err, "Couldn't read monitor-cloud-config", nil)
-
 	// Set up the cloud infra, VMs etc.
-	cloudSession, err := cloudsession.New(int64(config.Workers), workerCloudConfig, monitorCloudConfig)
-	checkError(err, "Couldn't create session", nil)
+	var cloudSession *cloudsession.CloudSession
+
+	if config.UseECS {
+		workerCloudConfig, err := ioutil.ReadFile(workerECRCloudConfigPath)
+		checkError(err, "Couldn't read worker-cloud-config", nil)
+
+		monitorCloudConfig, err := ioutil.ReadFile(monitorECRCloudConfigPath)
+		checkError(err, "Couldn't read monitor-cloud-config", nil)
+
+		cloudSession, err = cloudsession.NewECS(int64(config.Workers), workerCloudConfig, monitorCloudConfig)
+		checkError(err, "Couldn't create session", nil)
+	} else {
+		workerCloudConfig, err := ioutil.ReadFile(workerDockerCloudConfigPath)
+		checkError(err, "Couldn't read worker-cloud-config", nil)
+
+		monitorCloudConfig, err := ioutil.ReadFile(monitorDockerCloudConfigPath)
+		checkError(err, "Couldn't read monitor-cloud-config", nil)
+
+		cloudSession, err = cloudsession.NewDocker(int64(config.Workers), workerCloudConfig, monitorCloudConfig)
+		checkError(err, "Couldn't create session", nil)
+	}
 	log.Printf("Created cloud session")
 
 	// Configure Ctrl-C handler to perform graceful shutdown

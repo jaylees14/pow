@@ -10,12 +10,16 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ecs"
 	"github.com/aws/aws-sdk-go/service/sqs"
 )
 
 const (
 	InputQueue  string = "INPUT_QUEUE"
 	OutputQueue string = "OUTPUT_QUEUE"
+
+	DockerAMI string = "ami-081ff81791becd5df"
+	ECRAMI    string = "ami-097e3d1cdb541f43e"
 )
 
 // CloudSession maintains information needed to make requests to the cloud
@@ -25,6 +29,8 @@ type CloudSession struct {
 	outputQueueURL        *string
 	ec2WorkerInstanceIds  []*ec2.Instance
 	ec2MonitorInstanceIds []*ec2.Instance
+	advisorService        *ecs.Service
+	grafanaService        *ecs.Service
 }
 
 // WorkerResponse represents a worker's response to a task, which may or not be successful
@@ -34,8 +40,8 @@ type WorkerResponse struct {
 	Hash    *string
 }
 
-// New constructs a CloudSession
-func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (*CloudSession, error) {
+// NewDocker constructs a CloudSession based on a Docker-Compose insfrastructure
+func NewDocker(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (*CloudSession, error) {
 	session, err := session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1")},
 	)
@@ -44,12 +50,12 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 	}
 
 	// Create EC2 instances for the worker cluster
-	ec2WorkerInstances, err := createEC2Instances(session, instances, workerCloudConfig)
+	ec2WorkerInstances, err := createEC2Instances(session, DockerAMI, instances, workerCloudConfig)
 	if err != nil {
 		return nil, err
 	}
 	// Create EC2 instances for the monitoring cluster
-	ec2MonitorInstances, err := createEC2Instances(session, 1, monitorCloudConfig)
+	ec2MonitorInstances, err := createEC2Instances(session, DockerAMI, 1, monitorCloudConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +85,7 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 		time.Sleep(30 * time.Second)
 		ip, err := getEC2InstanceIP(session, *ec2MonitorInstances.Instances[0].InstanceId)
 		if err == nil {
-			log.Printf("Grafana metrics: http://%s:3000/d/gZ3GtvbWz/comsm0010-monitoring?orgId=1&refresh=10s&from=now-5m&to=now", *ip)
+			log.Printf("Grafana metrics: http://%s:3000/d/gZ3GtvbWz/comsm0010-monitoring-docker?orgId=1&refresh=10s&from=now-5m&to=now", *ip)
 		}
 	}()
 
@@ -89,6 +95,183 @@ func New(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (
 		outputQueueURL:        outputQueue.QueueUrl,
 		ec2WorkerInstanceIds:  ec2WorkerInstances.Instances,
 		ec2MonitorInstanceIds: ec2MonitorInstances.Instances,
+	}, nil
+}
+
+// NewECS constructs a CloudSession based on an ECS infrastructure
+func NewECS(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (*CloudSession, error) {
+	session, err := session.NewSession(&aws.Config{
+		Region: aws.String("us-east-1")},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create ECS Cluster for workers
+	workerCluster, err := createECSCluster(session, "COMSM0010-worker-cluster")
+	if err != nil {
+		return nil, err
+	}
+
+	// Create ECS Cluster for monitoring
+	monitorCluster, err := createECSCluster(session, "COMSM0010-monitor-cluster")
+	if err != nil {
+		return nil, err
+	}
+
+	// Create worker ECS task
+	workerContainer := &ecs.ContainerDefinition{
+		Essential:    aws.Bool(true),
+		Image:        aws.String("615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-worker:latest"),
+		Name:         aws.String("COMSM0010-worker-container"),
+		PortMappings: []*ecs.PortMapping{createPortMapping(2112, 2112)},
+	}
+	workerTask, err := createECSTask(session, "worker", workerContainer, []*ecs.Volume{}, false)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create advisor ECS task
+	advisorContainer := &ecs.ContainerDefinition{
+		Essential:    aws.Bool(true),
+		Image:        aws.String("google/cadvisor:latest"),
+		Name:         aws.String("COMSM0010-advisor-container"),
+		PortMappings: []*ecs.PortMapping{createPortMapping(8080, 8080)},
+		MountPoints: []*ecs.MountPoint{
+			createMountPoint("root", "/rootfs", true),
+			createMountPoint("var_run", "/var/run", false),
+			createMountPoint("sys", "/sys", true),
+			createMountPoint("var_lib_docker", "/var/lib/docker", true),
+			createMountPoint("cgroup", "/sys/fs/cgroup", true),
+		},
+	}
+	advisorVolumes := []*ecs.Volume{
+		createVolume("root", "/"),
+		createVolume("var_run", "/var/run"),
+		createVolume("sys", "/sys"),
+		createVolume("var_lib_docker", "/var/lib/docker"),
+		createVolume("cgroup", "/cgroup"),
+	}
+	advisorTask, err := createECSTask(session, "advisor", advisorContainer, advisorVolumes, false)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create prometheus ECS task
+	promContainer := &ecs.ContainerDefinition{
+		Essential:    aws.Bool(true),
+		Image:        aws.String("prom/prometheus:latest"),
+		Name:         aws.String("COMSM0010-prom-container"),
+		PortMappings: []*ecs.PortMapping{createPortMapping(9090, 9090)},
+		MountPoints:  []*ecs.MountPoint{createMountPoint("etc_prom", "/etc/prometheus", true)},
+	}
+	promVolumes := []*ecs.Volume{
+		createVolume("etc_prom", "/etc/prometheus"),
+	}
+	prometheusTask, err := createECSTask(session, "prometheus", promContainer, promVolumes, false)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create grafana ECS task
+	grafanaContainer := &ecs.ContainerDefinition{
+		Essential:    aws.Bool(true),
+		Image:        aws.String("615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-grafana:latest"),
+		Name:         aws.String("COMSM0010-grafana-container"),
+		PortMappings: []*ecs.PortMapping{createPortMapping(3000, 3000)},
+	}
+	grafanaTask, err := createECSTask(session, "grafana", grafanaContainer, []*ecs.Volume{}, true)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create an input queue
+	inputQueue, err := createQueue(session, InputQueue)
+	if err != nil {
+		return nil, err
+	}
+
+	// Clear input queue
+	_, err = clearQueue(session, inputQueue.QueueUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create an output queue
+	outputQueue, err := createQueue(session, OutputQueue)
+	if err != nil {
+		return nil, err
+	}
+
+	// Clear output queue
+	_, err = clearQueue(session, outputQueue.QueueUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create EC2 instances for the worker cluster
+	ec2WorkerInstances, err := createEC2Instances(session, ECRAMI, instances, workerCloudConfig)
+	if err != nil {
+		return nil, err
+	}
+	// Create EC2 instances for the monitoring cluster
+	ec2MonitorInstances, err := createEC2Instances(session, ECRAMI, 1, monitorCloudConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	// Wait for EC2 instances to become ready
+	clusterSizes := map[string]int{
+		*workerCluster.Cluster.ClusterName:  len(ec2WorkerInstances.Instances),
+		*monitorCluster.Cluster.ClusterName: len(ec2MonitorInstances.Instances),
+	}
+
+	log.Println("Waiting for EC2 instances to spin up...")
+	for {
+		if ec2InstancesReady(session, clusterSizes) {
+			log.Println("EC2 instances ready!")
+			break
+		}
+		time.Sleep(10 * time.Second)
+	}
+
+	// Start the prom task
+	_, err = startECSTask(session, monitorCluster.Cluster.ClusterName, prometheusTask.TaskDefinition.TaskDefinitionArn, 1)
+	if err != nil {
+		return nil, err
+	}
+
+	// Start the worker task
+	_, err = startECSTask(session, workerCluster.Cluster.ClusterName, workerTask.TaskDefinition.TaskDefinitionArn, instances)
+	if err != nil {
+		return nil, err
+	}
+
+	// Start advisor service
+	advisorService, err := startDaemonECSService(session, workerCluster.Cluster.ClusterName, advisorTask.TaskDefinition.TaskDefinitionArn, "advisor")
+	if err != nil {
+		return nil, err
+	}
+
+	grafanaService, err := startDaemonECSService(session, monitorCluster.Cluster.ClusterName, grafanaTask.TaskDefinition.TaskDefinitionArn, "grafana")
+	if err != nil {
+		return nil, err
+	}
+
+	ip, err := getEC2InstanceIP(session, *ec2MonitorInstances.Instances[0].InstanceId)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("Grafana metrics: http://%s:3000/d/3aIrED-Wk/comsm0010-monitoring-ecr?orgId=1&refresh=10s", *ip)
+
+	return &CloudSession{
+		session:               session,
+		inputQueueURL:         inputQueue.QueueUrl,
+		outputQueueURL:        outputQueue.QueueUrl,
+		ec2WorkerInstanceIds:  ec2WorkerInstances.Instances,
+		ec2MonitorInstanceIds: ec2MonitorInstances.Instances,
+		advisorService:        advisorService.Service,
+		grafanaService:        grafanaService.Service,
 	}, nil
 }
 
@@ -191,5 +374,19 @@ func (cs *CloudSession) Cleanup() {
 	_, err = clearQueue(cs.session, cs.outputQueueURL)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if cs.advisorService != nil {
+		_, err = stopECSService(cs.session, cs.advisorService.ClusterArn, cs.advisorService.ServiceName)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	if cs.grafanaService != nil {
+		_, err = stopECSService(cs.session, cs.grafanaService.ClusterArn, cs.grafanaService.ServiceName)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 }

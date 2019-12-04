@@ -20,15 +20,22 @@ type WorkerConfig struct {
 	Workers      int
 	Timeout      int
 	Confidence   int
+	UseECS       bool
 }
 
 // LogConfig will output the configuration being used
 func (wc *WorkerConfig) LogConfig() {
+	strategy := "Docker"
+	if wc.UseECS {
+		strategy = "ECS"
+	}
+
 	log.Printf("--- Configuration ---")
 	log.Printf("Block: %s", *wc.Block)
 	log.Printf("Timeout: %d seconds", wc.Timeout)
 	log.Printf("Leading zeros: %d", wc.LeadingZeros)
 	log.Printf("Workers: %d", wc.Workers)
+	log.Printf("Deployment strategy: %s", strategy)
 	log.Printf("---------------------")
 }
 
@@ -43,12 +50,14 @@ func ParseArgs() (*WorkerConfig, error) {
 	directLeadingZeros := directCommand.Int("d", 20, "number of leading zeros")
 	directTimeout := directCommand.Int("timeout", 360, "timeout in seconds")
 	directWorkers := directCommand.Int("n", 1, "number of workers")
+	directECS := directCommand.Bool("use-ecs", false, "use ecs as a task scheduler")
 
 	// Indirect mode args
 	indirectBlock := indirectCommand.String("block", "COMSM0010cloud", "block of data the nonce is appended to")
 	indirectLeadingZeros := indirectCommand.Int("d", 20, "number of leading zeros")
 	indirectTimeout := indirectCommand.Int("timeout", 360, "timeout in seconds")
 	indirectConfidence := indirectCommand.Int("confidence", 95, "confidence in finding the result, as a percentage")
+	indirectECS := indirectCommand.Bool("use-ecs", false, "use ecs as a task scheduler")
 
 	if len(os.Args) < 2 {
 		fmt.Println("direct or indirect subcommand is required")
@@ -86,6 +95,7 @@ func ParseArgs() (*WorkerConfig, error) {
 			Timeout:      *directTimeout,
 			Workers:      *directWorkers,
 			Confidence:   100,
+			UseECS:       *directECS,
 		}, nil
 	}
 
@@ -111,6 +121,7 @@ func ParseArgs() (*WorkerConfig, error) {
 			Timeout:      *indirectTimeout,
 			Confidence:   *indirectConfidence,
 			Workers:      workers,
+			UseECS:       *indirectECS,
 		}, nil
 	}
 

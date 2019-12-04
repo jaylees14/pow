@@ -1,0 +1,4 @@
+#cloud-config
+
+runcmd:
+  - echo ECS_CLUSTER=COMSM0010-worker-cluster >> /etc/ecs/ecs.config
