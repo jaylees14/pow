@@ -169,7 +169,7 @@ func NewECS(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte
 	// Create worker ECS task
 	workerContainer := &ecs.ContainerDefinition{
 		Essential:    aws.Bool(true),
-		Image:        aws.String("615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-worker:latest"),
+		Image:        aws.String("jaylees/comsm0010-worker:latest"),
 		Name:         aws.String("COMSM0010-worker-container"),
 		PortMappings: []*ecs.PortMapping{createPortMapping(2112, 2112)},
 	}
@@ -223,7 +223,7 @@ func NewECS(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte
 	// Create grafana ECS task
 	grafanaContainer := &ecs.ContainerDefinition{
 		Essential:    aws.Bool(true),
-		Image:        aws.String("615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-grafana:latest"),
+		Image:        aws.String("jaylees/comsm0010-grafana:latest"),
 		Name:         aws.String("COMSM0010-grafana-container"),
 		PortMappings: []*ecs.PortMapping{createPortMapping(3000, 3000)},
 	}

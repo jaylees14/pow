@@ -6,7 +6,7 @@ write_files:
 
       services:
         worker:
-          image: 615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-worker:latest 
+          image: jaylees/comsm0010-worker:latest 
           deploy:
             replicas: 1 
             restart_policy:
@@ -34,8 +34,8 @@ write_files:
 runcmd:
   - sudo $(aws ecr get-login --no-include-email --region us-east-1)
   - sudo service docker start
-  - sudo docker pull 615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-worker:latest
+  - sudo docker pull jaylees/comsm0010-worker:latest
   - sudo docker pull google/cadvisor:latest
   - cd /home/ec2-user
-  - sudo docker run -d -p 2112:2112 615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-worker:latest
+  - sudo docker run -d -p 2112:2112 jaylees/comsm0010-worker:latest
   - sudo docker run -d -p 8080:8080 -v /:/rootfs -v /var/run:/var/run -v /sys:/sys -v /var/lib/docker:/var/lib/docker -v /sys/fs/cgroup:/cgroup google/cadvisor:latest  

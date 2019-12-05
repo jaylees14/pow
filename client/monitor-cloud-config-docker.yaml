@@ -22,7 +22,7 @@ write_files:
 
       services:
         grafana:
-          image: 615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-grafana:latest 
+          image: jaylees/comsm0010-grafana:latest 
           deploy:
             replicas: 1 
             restart_policy:
@@ -46,7 +46,7 @@ write_files:
 runcmd:
   - sudo $(aws ecr get-login --no-include-email --region us-east-1)
   - sudo service docker start
-  - sudo docker pull 615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010-grafana:latest
+  - sudo docker pull jaylees/comsm0010-grafana:latest
   - sudo docker pull prom/prometheus:latest
   - cd /home/ec2-user
   - docker-compose up -d
