@@ -1,38 +1,6 @@
 #cloud-config
 
-write_files:
--   content: |
-      version: '3'
-
-      services:
-        worker:
-          image: jaylees/comsm0010-worker:latest 
-          deploy:
-            replicas: 1 
-            restart_policy:
-              condition: on-failure
-          ports:
-            - "2112:2112" 
-
-        cadvisor:
-          image: google/cadvisor:latest 
-          deploy:
-            replicas: 1
-            restart_policy:
-              condition: on-failure
-          ports:
-            - "8080:8080"
-          volumes:
-            - /:/rootfs
-            - /var/run:/var/run
-            - /sys:/sys
-            - /var/lib/docker:/var/lib/docker
-            - /sys/fs/cgroup:/cgroup
-      
-    path: /home/ec2-user/docker-compose.yml
-
 runcmd:
-  - sudo $(aws ecr get-login --no-include-email --region us-east-1)
   - sudo service docker start
   - sudo docker pull jaylees/comsm0010-worker:latest
   - sudo docker pull google/cadvisor:latest

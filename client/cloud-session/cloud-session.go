@@ -66,12 +66,12 @@ func NewDocker(instances int64, workerCloudConfig []byte, monitorCloudConfig []b
 		return nil, err
 	}
 
-	workerSecurityGroup, err := createSecurityGroup(session, "comsm0010-worker-sg", []int64{2112, 8080})
+	workerSecurityGroup, err := createSecurityGroup(session, "comsm0010-worker-sg", []int64{2112, 8080, 22})
 	if err != nil {
 		return nil, err
 	}
 
-	monitorSecurityGroup, err := createSecurityGroup(session, "comsm0010-monitor-sg", []int64{3000, 9090})
+	monitorSecurityGroup, err := createSecurityGroup(session, "comsm0010-monitor-sg", []int64{3000, 9090, 22})
 	if err != nil {
 		return nil, err
 	}
@@ -144,12 +144,12 @@ func NewECS(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte
 		return nil, err
 	}
 
-	workerSecurityGroup, err := createSecurityGroup(session, "comsm0010-worker-sg", []int64{2112, 8080})
+	workerSecurityGroup, err := createSecurityGroup(session, "comsm0010-worker-sg", []int64{2112, 8080, 22})
 	if err != nil {
 		return nil, err
 	}
 
-	monitorSecurityGroup, err := createSecurityGroup(session, "comsm0010-monitor-sg", []int64{3000, 9090})
+	monitorSecurityGroup, err := createSecurityGroup(session, "comsm0010-monitor-sg", []int64{3000, 9090, 22})
 	if err != nil {
 		return nil, err
 	}

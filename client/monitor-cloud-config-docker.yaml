@@ -44,7 +44,6 @@ write_files:
     path: /home/ec2-user/docker-compose.yml
 
 runcmd:
-  - sudo $(aws ecr get-login --no-include-email --region us-east-1)
   - sudo service docker start
   - sudo docker pull jaylees/comsm0010-grafana:latest
   - sudo docker pull prom/prometheus:latest
