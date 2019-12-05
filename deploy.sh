@@ -1,5 +1,8 @@
 #!/bin/sh
 
+pip install --user awscli
+export PATH=$PATH:$HOME/.local/bin
+
 SERVICES="worker grafana"
 BASE_REPO_URL=615057327315.dkr.ecr.us-east-1.amazonaws.com/jaylees/comsm0010
 
