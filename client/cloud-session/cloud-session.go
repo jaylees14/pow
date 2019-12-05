@@ -22,6 +22,13 @@ const (
 	ECRAMI    string = "ami-097e3d1cdb541f43e"
 )
 
+var iamRoles []string = []string{
+	"arn:aws:iam::aws:policy/AmazonSQSFullAccess",
+	"arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
+	"arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess",
+	"arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
+}
+
 // CloudSession maintains information needed to make requests to the cloud
 type CloudSession struct {
 	session               *session.Session
@@ -41,7 +48,7 @@ type WorkerResponse struct {
 }
 
 // NewDocker constructs a CloudSession based on a Docker-Compose insfrastructure
-func NewDocker(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (*CloudSession, error) {
+func NewDocker(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte, iamTrustJSON string) (*CloudSession, error) {
 	session, err := session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1")},
 	)
@@ -49,13 +56,33 @@ func NewDocker(instances int64, workerCloudConfig []byte, monitorCloudConfig []b
 		return nil, err
 	}
 
+	iamRole, err := createIamRole(session, "comsm0010-role", iamTrustJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	err = attachIamPermissions(session, iamRole.Roles[0].RoleName, iamRoles)
+	if err != nil {
+		return nil, err
+	}
+
+	workerSecurityGroup, err := createSecurityGroup(session, "comsm0010-worker-sg", []int64{2112, 8080})
+	if err != nil {
+		return nil, err
+	}
+
+	monitorSecurityGroup, err := createSecurityGroup(session, "comsm0010-monitor-sg", []int64{3000, 9090})
+	if err != nil {
+		return nil, err
+	}
+
 	// Create EC2 instances for the worker cluster
-	ec2WorkerInstances, err := createEC2Instances(session, DockerAMI, instances, workerCloudConfig)
+	ec2WorkerInstances, err := createEC2Instances(session, DockerAMI, instances, workerCloudConfig, workerSecurityGroup, iamRole.Arn)
 	if err != nil {
 		return nil, err
 	}
 	// Create EC2 instances for the monitoring cluster
-	ec2MonitorInstances, err := createEC2Instances(session, DockerAMI, 1, monitorCloudConfig)
+	ec2MonitorInstances, err := createEC2Instances(session, DockerAMI, 1, monitorCloudConfig, monitorSecurityGroup, iamRole.Arn)
 	if err != nil {
 		return nil, err
 	}
@@ -99,10 +126,30 @@ func NewDocker(instances int64, workerCloudConfig []byte, monitorCloudConfig []b
 }
 
 // NewECS constructs a CloudSession based on an ECS infrastructure
-func NewECS(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte) (*CloudSession, error) {
+func NewECS(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte, iamTrustJSON string) (*CloudSession, error) {
 	session, err := session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1")},
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	iamRole, err := createIamRole(session, "comsm0010-role", iamTrustJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	err = attachIamPermissions(session, iamRole.Roles[0].RoleName, iamRoles)
+	if err != nil {
+		return nil, err
+	}
+
+	workerSecurityGroup, err := createSecurityGroup(session, "comsm0010-worker-sg", []int64{2112, 8080})
+	if err != nil {
+		return nil, err
+	}
+
+	monitorSecurityGroup, err := createSecurityGroup(session, "comsm0010-monitor-sg", []int64{3000, 9090})
 	if err != nil {
 		return nil, err
 	}
@@ -210,12 +257,12 @@ func NewECS(instances int64, workerCloudConfig []byte, monitorCloudConfig []byte
 	}
 
 	// Create EC2 instances for the worker cluster
-	ec2WorkerInstances, err := createEC2Instances(session, ECRAMI, instances, workerCloudConfig)
+	ec2WorkerInstances, err := createEC2Instances(session, ECRAMI, instances, workerCloudConfig, workerSecurityGroup, iamRole.Arn)
 	if err != nil {
 		return nil, err
 	}
 	// Create EC2 instances for the monitoring cluster
-	ec2MonitorInstances, err := createEC2Instances(session, ECRAMI, 1, monitorCloudConfig)
+	ec2MonitorInstances, err := createEC2Instances(session, ECRAMI, 1, monitorCloudConfig, monitorSecurityGroup, iamRole.Arn)
 	if err != nil {
 		return nil, err
 	}
@@ -356,37 +403,37 @@ func (cs *CloudSession) Cleanup() {
 	// Remove EC2 instances
 	_, err := deleteEC2Instances(cs.session, cs.ec2WorkerInstanceIds)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
 	}
 
 	_, err = deleteEC2Instances(cs.session, cs.ec2MonitorInstanceIds)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
 	}
 
 	// Clear input queue
 	_, err = clearQueue(cs.session, cs.inputQueueURL)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
 	}
 
 	// Clear output queue
 	_, err = clearQueue(cs.session, cs.outputQueueURL)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
 	}
 
 	if cs.advisorService != nil {
 		_, err = stopECSService(cs.session, cs.advisorService.ClusterArn, cs.advisorService.ServiceName)
 		if err != nil {
-			log.Fatal(err)
+			log.Print(err)
 		}
 	}
 
 	if cs.grafanaService != nil {
 		_, err = stopECSService(cs.session, cs.grafanaService.ClusterArn, cs.grafanaService.ServiceName)
 		if err != nil {
-			log.Fatal(err)
+			log.Print(err)
 		}
 	}
 }

@@ -17,6 +17,7 @@ const (
 	workerECRCloudConfigPath     string = "worker-cloud-config-ecr.yaml"
 	monitorDockerCloudConfigPath string = "monitor-cloud-config-docker.yaml"
 	monitorECRCloudConfigPath    string = "monitor-cloud-config-ecr.yaml"
+	iamTrustRelationshipJSONPath string = "iam-trust-relationship.json"
 )
 
 func checkError(err error, message string, session *cloudsession.CloudSession) {
@@ -64,6 +65,9 @@ func main() {
 
 	config.LogConfig()
 
+	iamTrustJSON, err := ioutil.ReadFile(iamTrustRelationshipJSONPath)
+	checkError(err, "Couldn't read iam trust relationship JSON", nil)
+
 	// Set up the cloud infra, VMs etc.
 	var cloudSession *cloudsession.CloudSession
 
@@ -74,7 +78,7 @@ func main() {
 		monitorCloudConfig, err := ioutil.ReadFile(monitorECRCloudConfigPath)
 		checkError(err, "Couldn't read monitor-cloud-config", nil)
 
-		cloudSession, err = cloudsession.NewECS(int64(config.Workers), workerCloudConfig, monitorCloudConfig)
+		cloudSession, err = cloudsession.NewECS(int64(config.Workers), workerCloudConfig, monitorCloudConfig, string(iamTrustJSON))
 		checkError(err, "Couldn't create session", nil)
 	} else {
 		workerCloudConfig, err := ioutil.ReadFile(workerDockerCloudConfigPath)
@@ -83,7 +87,7 @@ func main() {
 		monitorCloudConfig, err := ioutil.ReadFile(monitorDockerCloudConfigPath)
 		checkError(err, "Couldn't read monitor-cloud-config", nil)
 
-		cloudSession, err = cloudsession.NewDocker(int64(config.Workers), workerCloudConfig, monitorCloudConfig)
+		cloudSession, err = cloudsession.NewDocker(int64(config.Workers), workerCloudConfig, monitorCloudConfig, string(iamTrustJSON))
 		checkError(err, "Couldn't create session", nil)
 	}
 	log.Printf("Created cloud session")
