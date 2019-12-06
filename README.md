@@ -19,6 +19,7 @@ The project is separated into 3 separate components:
 
 ## Usage
 - Firstly, administrator AWS credentials must be present in the file `~/.aws/credentials`
+- Create a key pair called "COMSM0010" on the [AWS Console](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#KeyPairs:sort=keyName)
 - Then, install Go as per the instructions [here](https://golang.org/doc/install)
 - Run `go get -u github.com/aws/aws-sdk-go/...`
 - From the `client` directory, run the following command for a list of available options
